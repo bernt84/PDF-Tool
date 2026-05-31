@@ -323,8 +323,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   border-radius:2px;
 }
 #te-edit-bar{
-  height:32px;flex-shrink:0;background:var(--sf3);border-bottom:1px solid var(--bd);
-  display:none;align-items:center;gap:6px;padding:0 8px;font-size:11px;
+  position:fixed;top:88px;left:50%;transform:translateX(-50%);
+  height:32px;background:var(--sf);border:1px solid var(--bd2);
+  border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,.5);
+  display:none;align-items:center;gap:6px;padding:0 14px;font-size:11px;
+  z-index:250;white-space:nowrap;
 }
 #te-edit-bar.active{display:flex}
 #te-edit-info{flex:1;color:var(--t3);font-size:10px}
@@ -694,11 +697,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
   <div id="preview-area">
     <div style="display:flex;flex:1;overflow:hidden;position:relative">
-      <div id="te-edit-bar">
-        <span id="te-edit-info">Klik på tekst i dokumentet for at redigere</span>
-        <button class="btn bXs bGh" onclick="teUndoAll()">↩ Nulstil alt</button>
-        <button class="btn bXs" style="background:rgba(234,179,8,.2);color:var(--amb);border:1px solid rgba(234,179,8,.3)" onclick="teShowModified()">📋 Vis ændringer</button>
-        <button class="btn bXs bDng" onclick="toggleTextEdit()">✕ Luk</button>
       </div>
       <div id="cv-container">
         <div id="cv-sizer">
@@ -2930,20 +2928,8 @@ async function mpvRenderAll() {
     if (pg === MPV.page) setTimeout(() => thumb.scrollIntoView({block:'center'}), 200);
   }
 
-  // Add Set BM button for each page in thumb
-  const allBms = bms;
-  thumbList.querySelectorAll('div').forEach((thumb, i) => {
-    const pg = i + 1;
-    const setBtn = document.createElement('button');
-    setBtn.className = 'btn bXs bGh bFull';
-    setBtn.style.cssText = 'font-size:9px;margin:1px 0 4px;width:calc(100% - 4px);margin-left:2px';
-    setBtn.textContent = '📌 Sæt BM her';
-    setBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      mpvSetBmPage(pg);
-    });
-    thumb.insertBefore(setBtn, thumb.lastChild);
-  });
+  // "Sæt BM her" buttons are only shown inside the preview modal thumb panel
+  // (removed from list mode to avoid confusion)
 
   MPV._rendering = false;
 }
@@ -4105,5 +4091,11 @@ async function extractText() {
 }
 
 </script>
+      <div id="te-edit-bar">
+        <span id="te-edit-info">Klik på tekst i dokumentet for at redigere</span>
+        <button class="btn bXs bGh" onclick="teUndoAll()">↩ Nulstil alt</button>
+        <button class="btn bXs" style="background:rgba(234,179,8,.2);color:var(--amb);border:1px solid rgba(234,179,8,.3)" onclick="teShowModified()">📋 Vis ændringer</button>
+        <button class="btn bXs bDng" onclick="toggleTextEdit()">✕ Luk</button>
+      </div>
 </body>
 </html>
