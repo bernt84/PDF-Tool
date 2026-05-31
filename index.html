@@ -1207,40 +1207,50 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-// Drag & drop setup
+// Drag & drop — block Chrome PDF viewer using capture phase
 (function setupDrop(){
   const overlay = document.getElementById('drop-overlay');
+  let dragDepth = 0;
 
-  // Must prevent default on BOTH dragover and drop at window level
-  // to stop Chrome from opening PDF in new tab
+  // Capture phase intercepts BEFORE browser default PDF handling
+  window.addEventListener('dragenter', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth++;
+    overlay.style.display = 'block';
+    overlay.style.pointerEvents = 'all';
+  }, {capture: true, passive: false});
+
   window.addEventListener('dragover', function(e){
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    overlay.style.display = 'block';
-    overlay.style.pointerEvents = 'all';
-  }, true);
+  }, {capture: true, passive: false});
+
+  window.addEventListener('dragleave', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth--;
+    if (dragDepth <= 0) {
+      dragDepth = 0;
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+    }
+  }, {capture: true, passive: false});
 
   window.addEventListener('drop', async function(e){
     e.preventDefault();
     e.stopPropagation();
+    dragDepth = 0;
     overlay.style.display = 'none';
     overlay.style.pointerEvents = 'none';
     const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
     if (files.length) {
       await handleFiles(files);
     } else if (e.dataTransfer.files.length) {
-      toast('Kun PDF-filer understøttes — træk kun .pdf filer', true);
+      toast('Kun PDF-filer understøttes', true);
     }
-  }, true);
-
-  window.addEventListener('dragleave', function(e){
-    // Only hide if leaving the browser window entirely
-    if (!e.relatedTarget) {
-      overlay.style.display = 'none';
-      overlay.style.pointerEvents = 'none';
-    }
-  }, true);
+  }, {capture: true, passive: false});
 })();
 
 // Also fix file input — ensure it works cross-browser
