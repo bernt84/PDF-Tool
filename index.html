@@ -441,7 +441,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="topbar">
   <div class="logo">⬛ PDF Tool Pro<sub>v2.0</sub></div>
   <div class="vsep"></div>
-  <label class="btn bPri bSm" style="cursor:pointer"><input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>+ PDF</label>
+  <label class="btn bPri bSm" style="cursor:pointer"><input type="file" id="file-input-topbar" accept=".pdf" multiple style="display:none"/>+ PDF</label>
   <div class="vsep"></div>
   <button class="mode-btn active" id="btn-pm" onclick="setMode('preview')">⊞ Preview</button>
   <button class="mode-btn" id="btn-lm" onclick="setMode('list')">≡ Liste</button>
@@ -611,7 +611,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
           <div class="ei">📑</div>
           <p>Tilføj PDF-filer</p>
           <p style="font-size:11px;color:var(--t4);margin-top:4px">Træk & slip eller klik + PDF</p>
-          <label class="btn bPri" style="margin-top:8px;cursor:pointer"><input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>+ Tilføj PDF</label>
+          <label class="btn bPri" style="margin-top:8px;cursor:pointer"><input type="file" id="file-input-empty" accept=".pdf" multiple style="display:none"/>+ Tilføj PDF</label>
         </div>
       </div>
 
@@ -2861,10 +2861,8 @@ function mpvSetBmPage(pg) {
     toast('Bogmærke sat til side ' + pg + ' ✓', 'ok');
     openPreview(MPV.fileIdx, pg);
   } else {
-    const opts = bms.map((b,i) => `${i}: ${b.title} (nu s.${b.page})`).join('
-');
-    const idx = prompt(`Vælg bogmærke (skriv nummer):
-${opts}`);
+    const opts = bms.map((b,i) => i+': '+b.title+' (nu s.'+b.page+')').join('\n');
+    const idx = prompt('Vælg bogmærke (skriv nummer):\n'+opts);
     if (idx !== null && !isNaN(parseInt(idx))) {
       saveLfBmPage(MPV.fileIdx, parseInt(idx), pg);
       toast('Bogmærke sat til side ' + pg + ' ✓', 'ok');
@@ -3165,6 +3163,12 @@ function markOcrDone(fileIdx) {
   const badge = document.getElementById('ai-ready-badge');
   if (badge) { badge.className = 'ready'; badge.innerHTML = '✓ AI klar'; badge.style.display='flex'; badge.style.opacity='1'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); },2000); }
 }
+
+// Wire up label file inputs
+['file-input-topbar','file-input-empty'].forEach(function(id){
+  var el=document.getElementById(id);
+  if(el)el.addEventListener('change',function(){handleFilesFromInput(this);});
+});
 </script>
 </body>
 </html>
