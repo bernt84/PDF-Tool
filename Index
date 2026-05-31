@@ -1,0 +1,2266 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PDF Tool Pro v2.0</title>
+
+<!-- Libraries -->
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0d12;--sf:#13161e;--sf2:#191d28;--sf3:#1f2435;--sf4:#262c3d;
+  --bd:#252b3b;--bd2:#2f3850;
+  --acc:#3b82f6;--grn:#22c55e;--amb:#f59e0b;--red:#ef4444;--pur:#a855f7;
+  --org:#f97316;--cyn:#06b6d4;--yel:#eab308;
+  --t1:#e2e8f0;--t2:#94a3b8;--t3:#64748b;--t4:#3d4d66;
+  --r:7px;--rlg:12px;
+}
+html,body{height:100%;background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;overflow:hidden}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
+
+/* ── LAYOUT ── */
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{height:48px;flex-shrink:0;background:var(--sf);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:6px;padding:0 12px;z-index:200;overflow:visible}
+.logo{font-size:14px;font-weight:900;color:var(--acc);letter-spacing:-.3px}
+.logo sub{font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0}
+.vsep{width:1px;height:22px;background:var(--bd);margin:0 4px;flex-shrink:0}
+.sp{flex:1}
+.mode-btn{padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd2);background:transparent;color:var(--t2);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
+.mode-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+.mode-btn:hover:not(.active){background:var(--sf2);color:var(--t1)}
+#workspace{display:flex;flex:1;overflow:hidden}
+
+/* ── MENUBAR ── */
+#menubar{height:40px;flex-shrink:0;background:var(--sf2);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;padding:0 8px;overflow:visible;position:relative;z-index:150}
+.mb-left{display:flex;align-items:center;gap:1px}
+.mb-right{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.mb-group{position:relative}
+.mb-btn{height:28px;padding:0 10px;background:transparent;border:none;color:var(--t2);font-size:12px;font-weight:600;cursor:pointer;border-radius:4px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;transition:all .12s}
+.mb-btn:hover,.mb-btn.mopen{background:rgba(59,130,246,.15);color:var(--t1)}
+.mb-menu{position:fixed;z-index:9999;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.7);min-width:240px;max-height:75vh;overflow-y:auto;display:none;flex-direction:column;padding:4px 0}
+.mb-menu.mopen{display:flex}
+.mb-item{padding:7px 16px;font-size:12px;color:var(--t2);cursor:pointer;display:flex;align-items:center;gap:9px;white-space:nowrap;transition:all .1s}
+.mb-item:hover{background:rgba(59,130,246,.12);color:var(--t1)}
+.mb-sep{height:1px;background:var(--bd);margin:4px 0}
+.mb-section{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding:6px 16px 2px}
+.mb-vsep{width:1px;height:20px;background:var(--bd);margin:0 3px;flex-shrink:0}
+#mb-tool-lbl{font-size:11px;color:var(--acc);font-weight:700;white-space:nowrap;padding:0 4px}
+#menubar .color-pick{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex-shrink:0;display:inline-block;transition:border-color .12s}
+#menubar .color-pick.sel{border-color:#fff}
+input[type=range]{-webkit-appearance:none;height:4px;background:var(--bd2);border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--acc)}
+
+/* ── FILE PANEL ── */
+#file-panel{width:260px;flex-shrink:0;background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden;transition:width .2s}
+#file-panel.collapsed{width:0}
+#fp-top{padding:7px;display:flex;gap:4px;flex-shrink:0;border-bottom:1px solid var(--bd)}
+#fsrch{flex:1;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:12px;padding:5px 8px;outline:none}
+#fsrch:focus{border-color:var(--acc)}
+#file-list-wrap{flex:1;overflow-y:auto}
+.fi{display:flex;align-items:center;gap:5px;padding:6px 8px;cursor:pointer;border-left:3px solid transparent;transition:background .12s;min-width:0}
+.fi:hover{background:var(--sf2)}.fi.active{border-left-color:var(--acc);background:var(--sf3)}
+.fi-cb{flex-shrink:0;width:15px;height:15px;border-radius:3px;border:1.5px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;transition:all .12s}
+.fi-cb.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.fi-body{flex:1;min-width:0}
+.fi-name{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fi-badges{display:flex;gap:3px;flex-wrap:wrap;margin-top:2px}
+.badge{display:inline-flex;align-items:center;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700}
+.bOk{background:rgba(34,197,94,.15);color:var(--grn)}
+.bNone{background:rgba(249,115,22,.15);color:var(--org)}
+.bOcr{background:rgba(6,182,212,.15);color:var(--cyn)}
+.bRot{background:rgba(168,85,247,.15);color:var(--pur)}
+.fi-del{flex-shrink:0;color:var(--t3);opacity:0;cursor:pointer;font-size:11px;padding:2px;transition:opacity .12s}
+.fi:hover .fi-del{opacity:1}.fi-del:hover{color:var(--red)}
+#bulk-bar{flex-shrink:0;border-top:1px solid var(--bd);padding:7px;display:flex;flex-direction:column;gap:5px}
+#bulk-actions{display:flex;flex-wrap:wrap;gap:3px}
+#bulk-sum{font-size:10px;color:var(--t3)}
+
+/* ── PREVIEW ── */
+#preview-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#cv-container{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:14px;background:#060809;position:relative}
+#cv-sizer{position:relative;display:none}
+#pdf-canvas{display:block}
+#anno-canvas{position:absolute;top:0;left:0}
+#txt-overlay{position:absolute;top:0;left:0;pointer-events:none}
+#search-overlay{position:absolute;top:0;left:0;pointer-events:none}
+#empty-st{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--t3)}
+.ei{font-size:56px;opacity:.25}
+
+/* ── OVERLAY EDITOR ── */
+.ov-el{position:absolute;box-sizing:border-box;cursor:move}
+.ov-el:hover{outline:1.5px dashed rgba(59,130,246,.5)}
+.ov-el.selected{outline:2px solid var(--acc) !important}
+.ov-txt{cursor:text}
+.search-hl{position:absolute;background:rgba(234,179,8,.3);border:1px solid var(--yel);pointer-events:none;border-radius:2px}
+.search-hl.current{background:rgba(234,179,8,.6)}
+
+/* ── PAGE MGR ── */
+#page-mgr{width:140px;flex-shrink:0;background:var(--sf2);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+#page-mgr.hidden{display:none}
+#pmgr-h{padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+#pt-list{flex:1;overflow-y:auto;padding:4px}
+.pt{margin-bottom:5px;border:2px solid transparent;border-radius:5px;cursor:pointer;overflow:hidden;background:var(--sf3);transition:border-color .15s}
+.pt:hover{border-color:var(--acc)}.pt.active{border-color:var(--acc)}.pt.sel{border-color:var(--pur)}
+.pt canvas{display:block;width:100%}
+.pt-lbl{font-size:9px;color:var(--t3);text-align:center;padding:2px 0}
+#pmgr-tb{padding:5px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:3px}
+
+/* ── COMPARE ── */
+#compare-view{display:none;flex:1;overflow:hidden}
+#compare-view.active{display:flex}
+#compare-left,#compare-right{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#060809}
+#compare-left{border-right:2px solid var(--acc)}
+.cmp-bar{height:36px;flex-shrink:0;background:var(--sf2);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:11px;color:var(--t2)}
+.cmp-cv-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:10px}
+
+/* ── RIGHT PANEL ── */
+#right-panel{width:300px;flex-shrink:0;background:var(--sf);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+#rtabs{display:flex;border-bottom:1px solid var(--bd);flex-shrink:0;overflow-x:auto}
+.rtab{flex-shrink:0;padding:9px 8px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.rtab:hover{color:var(--t2)}.rtab.active{color:var(--acc);border-bottom-color:var(--acc)}
+.rp{flex:1;overflow:hidden;display:none;flex-direction:column}.rp.active{display:flex}
+
+/* BM panel */
+#bm-info{padding:6px 10px;font-size:11px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+#bm-lw{flex:1;overflow-y:auto}
+.bm-item{display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:5px;margin:1px 4px;cursor:pointer;transition:background .12s}
+.bm-item:hover{background:var(--sf2)}.bm-item.sel{background:rgba(59,130,246,.15)}
+.bm-item.dis .bm-lbl{color:var(--t3);text-decoration:line-through}
+.bm-drag{color:var(--t3);cursor:grab;font-size:11px;flex-shrink:0}
+.bm-dot{border-radius:50%;flex-shrink:0}
+.bm-lbl{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm-pg{font-size:10px;color:var(--t3);flex-shrink:0}
+#bm-edit-form{display:none;padding:8px;border-top:1px solid var(--bd);flex-direction:column;gap:5px;flex-shrink:0}
+.bef-inp{background:var(--sf2);border:1px solid var(--bd2);border-radius:var(--r);color:var(--t1);font-size:12px;padding:5px 8px;outline:none;width:100%}
+.bef-inp:focus{border-color:var(--acc)}
+#fn-box{padding:7px;border-top:1px solid var(--bd);display:none;flex-direction:column;gap:5px;flex-shrink:0}
+#fn-box.vis{display:flex}
+.fn-chip{display:flex;align-items:center;gap:5px;padding:4px 7px;background:var(--sf3);border:1px solid var(--bd);border-radius:5px;cursor:pointer;font-size:11px;transition:border-color .15s}
+.fn-chip:hover{border-color:var(--acc)}
+#bm-tb{padding:6px;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:4px;flex-shrink:0}
+
+/* ANNO panel */
+#anno-lw{flex:1;overflow-y:auto;padding:4px}
+.anno-item{display:flex;align-items:center;gap:6px;padding:5px 7px;border-radius:5px;background:var(--sf2);margin-bottom:3px;font-size:11px}
+.anno-item .at{color:var(--t3);font-size:10px;flex-shrink:0}
+.anno-item .al{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.anno-item .adel{color:var(--t3);cursor:pointer;padding:2px;transition:color .12s}
+.anno-item .adel:hover{color:var(--red)}
+#ocr-search-panel{border-top:1px solid var(--bd);padding:8px;flex-shrink:0}
+.redact-cp{width:20px;height:20px;border-radius:50%;cursor:pointer;flex-shrink:0;border:2px solid transparent;transition:border-color .15s;display:inline-block}
+.redact-cp.sel{border-color:#fff !important}
+.ocr-search-row{display:flex;gap:5px;margin:5px 0}
+.ocr-search-row input{flex:1;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:11px;padding:4px 7px;outline:none}
+.ocr-search-row input:focus{border-color:var(--acc)}
+.ocr-ri{display:flex;align-items:center;gap:5px;padding:3px 5px;border-radius:4px;font-size:11px;margin-bottom:2px}
+.ocr-ok{background:rgba(34,197,94,.1);color:var(--grn)}
+.ocr-fail{background:rgba(239,68,68,.1);color:var(--red)}
+
+/* TEKST panel */
+#te-panel{display:flex;flex-direction:column;padding:8px;gap:6px;overflow:hidden;height:100%}
+#te-tb{display:flex;flex-wrap:wrap;gap:4px;flex-shrink:0;border-bottom:1px solid var(--bd);padding-bottom:6px}
+#te-blocks{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.te-b{background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden}
+.te-bh{padding:3px 7px;background:var(--sf3);font-size:10px;color:var(--t3);display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--bd)}
+.te-bh span{flex:1;font-family:monospace}
+.te-ta{width:100%;padding:6px 7px;background:transparent;border:none;outline:none;resize:vertical;color:var(--t1);font-size:11px;font-family:inherit;line-height:1.5;min-height:30px}
+.te-empty{padding:18px;text-align:center;color:var(--t3);font-size:11px}
+
+/* SIGNATURE panel */
+#sig-panel{display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto}
+#sig-canvas{border:2px dashed var(--bd2);border-radius:var(--r);background:#fff;cursor:crosshair;display:block;width:100%}
+#sig-canvas.has-sig{border-color:var(--grn)}
+.sig-type-inp{background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:18px;padding:8px;outline:none;width:100%;text-align:center}
+.sig-type-inp:focus{border-color:var(--acc)}
+
+/* META */
+#meta-p{padding:10px;gap:8px;overflow-y:auto;display:flex;flex-direction:column}
+.mf{display:flex;flex-direction:column;gap:3px}
+.mf label{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.mi{background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:12px;padding:5px 8px;outline:none;width:100%}
+.mi:focus{border-color:var(--acc)}
+
+/* ── LIST MODE ── */
+#list-mode{display:none;flex:1;overflow:hidden;flex-direction:column}
+#list-mode.active{display:flex}
+#list-tb{padding:7px 10px;background:var(--sf);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:5px;flex-shrink:0;flex-wrap:wrap}
+#list-srch{flex:1;min-width:140px;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:12px;padding:5px 8px;outline:none}
+#list-srch:focus{border-color:var(--acc)}
+#list-wrap{flex:1;overflow-y:auto;padding:6px 10px}
+.lf-row{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);margin-bottom:4px;overflow:hidden;transition:border-color .15s}
+.lf-row.lf-active{border-color:var(--acc)}
+.lf-head{display:flex;align-items:center;gap:6px;padding:7px 10px;cursor:pointer;user-select:none;min-width:0}
+.lf-head:hover{background:var(--sf2)}
+.lf-cb{flex-shrink:0;width:15px;height:15px;border-radius:3px;border:1.5px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer}
+.lf-cb.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.lf-fname{flex:1;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lf-del2{color:var(--t3);cursor:pointer;font-size:12px;padding:2px;transition:color .12s}
+.lf-del2:hover{color:var(--red)}
+.lf-bm-area{border-top:1px solid var(--bd);background:var(--sf2);padding:6px 10px 8px}
+.lbn{display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:4px;transition:background .12s}
+.lbn:hover{background:var(--sf3)}
+.lbn-dot{border-radius:50%;flex-shrink:0}
+.lbn.dis .lbn-txt{color:var(--t3);text-decoration:line-through}
+.lbn-txt{flex:1;font-size:11px;cursor:text;padding:1px 3px;border-radius:3px}
+.lbn-txt:focus{outline:1px solid var(--acc);background:var(--sf3)}
+.lbn-pg{font-size:10px;color:var(--t3);flex-shrink:0}
+.lbn-del{color:var(--t3);cursor:pointer;font-size:11px;padding:1px 4px;transition:color .12s;flex-shrink:0}
+.lbn-del:hover{color:var(--red)}
+.tog-m{position:relative;width:26px;height:14px;flex-shrink:0;cursor:pointer}
+.tog-m input{opacity:0;width:0;height:0;position:absolute}
+.tog-sl{position:absolute;inset:0;background:var(--bd2);border-radius:14px;transition:background .2s}
+.tog-sl::before{content:'';position:absolute;left:2px;bottom:2px;width:10px;height:10px;background:#fff;border-radius:50%;transition:transform .2s}
+.tog-m input:checked+.tog-sl{background:var(--grn)}
+.tog-m input:checked+.tog-sl::before{transform:translateX(12px)}
+.lf-add{display:flex;align-items:center;gap:5px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--bd2)}
+.lf-add input{flex:1;background:var(--sf3);border:1px solid var(--bd);border-radius:4px;color:var(--t1);font-size:11px;padding:3px 6px;outline:none}
+.lf-add input:focus{border-color:var(--acc)}
+.lf-no-bm{font-size:11px;color:var(--t3);font-style:italic;padding:2px 0 4px}
+.ocr-sug{display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:4px;font-size:10px;color:var(--acc);cursor:pointer;margin-top:3px}
+.ocr-sug:hover{background:rgba(59,130,246,.2)}
+
+/* ── PROGRESS ── */
+#progress-wrap{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:600;display:none;flex-direction:column;align-items:center;justify-content:center}
+#progress-wrap.show{display:flex}
+#pb-box{background:var(--sf);border:1px solid var(--bd2);border-radius:var(--rlg);padding:24px 32px;min-width:380px;display:flex;flex-direction:column;gap:12px}
+#pb-title{font-size:14px;font-weight:700}
+#pb-sub{font-size:12px;color:var(--t3)}
+#pb-track{background:var(--bd2);border-radius:4px;height:8px;overflow:hidden}
+#pb-fill{height:100%;background:var(--acc);border-radius:4px;transition:width .2s;width:0}
+
+/* ── MUPDF STATUS ── */
+#mupdf-status{position:fixed;bottom:60px;right:16px;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);padding:8px 14px;font-size:11px;color:var(--t3);z-index:400;display:none}
+#mupdf-status.show{display:flex;align-items:center;gap:8px}
+#mupdf-status.ready{color:var(--grn);border-color:rgba(34,197,94,.3)}
+#mupdf-status.error{color:var(--red);border-color:rgba(239,68,68,.3)}
+
+/* ── SEARCH BAR ── */
+#search-bar{position:fixed;top:56px;right:16px;z-index:300;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);padding:8px 10px;display:none;align-items:center;gap:6px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+#search-bar.show{display:flex}
+#sb-inp{background:var(--sf2);border:1px solid var(--bd);border-radius:5px;color:var(--t1);font-size:12px;padding:4px 8px;outline:none;width:200px}
+#sb-inp:focus{border-color:var(--acc)}
+#sb-info{font-size:11px;color:var(--t3);min-width:55px}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:5px 11px;border-radius:var(--r);border:none;font-size:11px;font-weight:600;cursor:pointer;transition:opacity .12s,transform .1s;white-space:nowrap;line-height:1}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn:not(:disabled):hover{opacity:.85}
+.btn:not(:disabled):active{transform:scale(.97)}
+.bPri{background:var(--acc);color:#fff}
+.bSuc{background:var(--grn);color:#000;font-weight:700}
+.bGh{background:transparent;border:1px solid var(--bd2);color:var(--t2)}
+.bGh:hover{background:var(--sf2)!important;opacity:1!important}
+.bDng{background:var(--red);color:#fff}
+.bAmb{background:var(--amb);color:#000;font-weight:700}
+.bPur{background:var(--pur);color:#fff}
+.bCyn{background:var(--cyn);color:#000;font-weight:700}
+.bSm{padding:4px 9px}
+.bXs{padding:3px 6px;font-size:10px}
+.bFull{width:100%}
+.bIcon{padding:4px 7px;background:transparent;border:1px solid var(--bd);color:var(--t2)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ── MODALS ── */
+.mbk{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.mbk.open{opacity:1;pointer-events:all}
+.mdl{background:var(--sf);border:1px solid var(--bd2);border-radius:var(--rlg);box-shadow:0 4px 32px rgba(0,0,0,.6);width:500px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;transform:translateY(12px) scale(.97);transition:transform .2s}
+.mbk.open .mdl{transform:none}
+.mhd{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;flex-shrink:0}
+.mhd button{background:none;border:none;color:var(--t2);cursor:pointer;font-size:17px;padding:2px}
+.mhd button:hover{color:var(--t1)}
+.mbd{padding:14px 16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px}
+.mft{padding:10px 16px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;gap:6px;flex-shrink:0}
+.mfield{display:flex;flex-direction:column;gap:4px}
+.mfield label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.minput{background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);color:var(--t1);font-size:12px;padding:6px 9px;outline:none;width:100%}
+.minput:focus{border-color:var(--acc)}
+.tog{position:relative;width:30px;height:17px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0;position:absolute}
+.tog-sl2{position:absolute;inset:0;background:var(--bd2);border-radius:17px;cursor:pointer;transition:background .2s}
+.tog-sl2::before{content:'';position:absolute;left:2px;bottom:2px;width:13px;height:13px;background:#fff;border-radius:50%;transition:transform .2s}
+.tog input:checked+.tog-sl2{background:var(--acc)}
+.tog input:checked+.tog-sl2::before{transform:translateX(13px)}
+
+/* Grp chips */
+.grp-chip{display:inline-flex;align-items:center;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;color:#fff}
+.gc0{background:#3b82f6}.gc1{background:#22c55e}.gc2{background:#f59e0b}.gc3{background:#a855f7}.gc4{background:#06b6d4}.gc5{background:#f97316}
+
+/* ── MISC ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--sf3);border:1px solid var(--bd2);color:var(--t1);padding:8px 18px;border-radius:18px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:999}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-color:var(--red);color:var(--red)}
+#toast.ok{border-color:var(--grn);color:var(--grn)}
+#prog{position:fixed;top:0;left:0;height:2px;background:var(--acc);width:0;transition:width .25s;z-index:9999}
+#file-input{display:none}#img-input{display:none}
+
+/* API key setup */
+#api-setup{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:700;display:flex;align-items:center;justify-content:center}
+#api-setup.hidden{display:none}
+#api-box{background:var(--sf);border:1px solid var(--bd2);border-radius:var(--rlg);padding:28px 32px;width:480px;max-width:95vw;display:flex;flex-direction:column;gap:14px}
+</style>
+</head>
+<body>
+<div id="prog"></div>
+<input type="file" id="file-input" accept=".pdf" multiple/>
+<input type="file" id="img-input" accept="image/*"/>
+
+<!-- API SETUP SCREEN -->
+<div id="api-setup">
+  <div id="api-box">
+    <div style="font-size:20px;font-weight:900;color:var(--acc)">⬛ PDF Tool Pro <span style="font-size:12px;color:var(--t3)">v2.0</span></div>
+    <div style="font-size:13px;color:var(--t2)">For at bruge OCR-funktioner skal du indtaste din Google Vision API-nøgle. Den gemmes kun i din browser.</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)">Google Vision API Nøgle</label>
+      <input id="api-key-inp" type="password" class="minput" placeholder="AIza..."/>
+      <div style="font-size:11px;color:var(--t3)">Opret gratis på <a href="https://console.cloud.google.com/apis/library/vision.googleapis.com" target="_blank" style="color:var(--acc)">console.cloud.google.com</a> → Vision API → Enable → Credentials → Create API Key</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn bPri bFull" onclick="saveApiKey()">✓ Gem og start</button>
+      <button class="btn bGh" onclick="skipApiKey()">Spring over (ingen OCR)</button>
+    </div>
+  </div>
+</div>
+
+<!-- SEARCH BAR -->
+<div id="search-bar">
+  <input id="sb-inp" type="text" placeholder="Find tekst…" oninput="searchText(this.value)" onkeydown="sbKey(event)"/>
+  <span id="sb-info">0 / 0</span>
+  <button class="btn bGh bXs" onclick="sbNav(-1)">▲</button>
+  <button class="btn bGh bXs" onclick="sbNav(1)">▼</button>
+  <button class="btn bGh bXs" onclick="closeSearch()">✕</button>
+</div>
+
+<!-- PROGRESS -->
+<div id="progress-wrap">
+  <div id="pb-box">
+    <div id="pb-title">Behandler…</div>
+    <div id="pb-sub">0 / 0</div>
+    <div id="pb-track"><div id="pb-fill"></div></div>
+    <button class="btn bGh bSm" onclick="cancelProgress()">Annuller</button>
+  </div>
+</div>
+
+<!-- MUPDF STATUS -->
+<div id="mupdf-status"><span class="spin"></span> Indlæser MuPDF WASM…</div>
+
+<div id="app">
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="logo">⬛ PDF Tool Pro<sub>v2.0</sub></div>
+  <div class="vsep"></div>
+  <button class="btn bPri bSm" onclick="triggerFile()">+ PDF</button>
+  <div class="vsep"></div>
+  <button class="mode-btn active" id="btn-pm" onclick="setMode('preview')">⊞ Preview</button>
+  <button class="mode-btn" id="btn-lm" onclick="setMode('list')">≡ Liste</button>
+  <div class="vsep"></div>
+  <!-- Nav controls (preview only) -->
+  <div id="preview-nav" style="display:flex;align-items:center;gap:3px">
+    <button class="btn bIcon bSm" onclick="toggleFilePanel()">☰</button>
+    <button class="btn bIcon bSm" id="btn-pv" onclick="togglePreview()">⊟</button>
+    <div class="vsep"></div>
+    <button class="btn bIcon bSm" id="tb-prev" disabled onclick="changePage(-1)">◀</button>
+    <input id="pn-inp" type="number" min="1" value="1" onchange="gotoPageInput(this.value)" disabled
+      style="background:var(--sf2);border:1px solid var(--bd);border-radius:5px;color:var(--t1);font-size:12px;padding:3px 5px;width:42px;text-align:center;outline:none"/>
+    <span id="pn-tot" style="font-size:12px;color:var(--t3)">/ —</span>
+    <button class="btn bIcon bSm" id="tb-next" disabled onclick="changePage(1)">▶</button>
+    <div class="vsep"></div>
+    <button class="btn bIcon bSm" onclick="changeZoom(-.25)">−</button>
+    <span id="zoom-lbl" style="font-size:11px;color:var(--t3);min-width:36px;text-align:center">100%</span>
+    <button class="btn bIcon bSm" onclick="changeZoom(.25)">+</button>
+    <button class="btn bIcon bSm" onclick="zoomFit()">⊡</button>
+    <button class="btn bIcon bSm" onclick="toggleSearch()" title="Ctrl+F">🔍</button>
+    <button class="btn bIcon bSm" id="btn-compare" onclick="toggleCompare()">⊟⊞</button>
+    <div class="vsep"></div>
+    <button class="btn bIcon bSm" onclick="togglePageMgr()">⊞</button>
+  </div>
+  <div class="sp"></div>
+  <button class="btn bAmb bSm" id="tb-sug" disabled onclick="showFnSuggest()">📄 Omdøb</button>
+  <button class="btn bSuc bSm" id="tb-save" disabled onclick="smartDownload()">⬇ Download</button>
+</div>
+
+<!-- MENUBAR -->
+<div id="menubar">
+  <div class="mb-left">
+    <!-- Annotér -->
+    <div class="mb-group">
+      <button class="mb-btn" onclick="toggleMenu('m-anno')">✏ Annotér ▾</button>
+      <div class="mb-menu" id="m-anno">
+        <div class="mb-section">Tegneværktøjer</div>
+        <div class="mb-item" onclick="setTool('highlight');closeMenus()"><span>▮</span> Fremhævning</div>
+        <div class="mb-item" onclick="setTool('redact');closeMenus()"><span>█</span> Overstrekning</div>
+        <div class="mb-item" onclick="setTool('pen');closeMenus()"><span>✏</span> Frihånd</div>
+        <div class="mb-item" onclick="setTool('text');closeMenus()"><span>T</span> Tekstboks</div>
+        <div class="mb-sep"></div>
+        <div class="mb-section">Former</div>
+        <div class="mb-item" onclick="setTool('rect');closeMenus()"><span>□</span> Kasse</div>
+        <div class="mb-item" onclick="setTool('circle');closeMenus()"><span>○</span> Cirkel</div>
+        <div class="mb-item" onclick="setTool('line');closeMenus()"><span>╱</span> Linje</div>
+        <div class="mb-item" onclick="setTool('arrow');closeMenus()"><span>→</span> Pil</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="undoAnno();closeMenus()">↩ Fortryd</div>
+        <div class="mb-item" onclick="clearPageAnnos();closeMenus()">🗑 Ryd side</div>
+      </div>
+    </div>
+    <!-- Sider -->
+    <div class="mb-group">
+      <button class="mb-btn" onclick="toggleMenu('m-pages')">📄 Sider ▾</button>
+      <div class="mb-menu" id="m-pages">
+        <div class="mb-item" onclick="rotateSingle();closeMenus()">↻ Roter 90°</div>
+        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter via OCR</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
+        <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
+        <div class="mb-item" onclick="openM('m-split');closeMenus()">✂ Split PDF…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="togglePageMgr();closeMenus()">⊞ Sidepanel</div>
+        <div class="mb-item" onclick="toggleCompare();closeMenus()">⊟⊞ Sammenlign</div>
+      </div>
+    </div>
+    <!-- Indsæt -->
+    <div class="mb-group">
+      <button class="mb-btn" onclick="toggleMenu('m-insert')">➕ Indsæt ▾</button>
+      <div class="mb-menu" id="m-insert">
+        <div class="mb-item" onclick="triggerImgInsert();closeMenus()">🖼 Billede på siden…</div>
+        <div class="mb-item" onclick="setTool('text');closeMenus()">T Tekstboks</div>
+        <div class="mb-item" onclick="openSignaturePanel();closeMenus()">✍ Signatur…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="copyPageText();closeMenus()">📋 Kopiér al tekst</div>
+      </div>
+    </div>
+    <!-- OCR -->
+    <div class="mb-group">
+      <button class="mb-btn" onclick="toggleMenu('m-ocr-dd')">🔍 OCR ▾</button>
+      <div class="mb-menu" id="m-ocr-dd">
+        <div class="mb-item" onclick="runOCR();closeMenus()">🔍 OCR denne side → Tekst</div>
+        <div class="mb-item" onclick="switchRT('anno');closeMenus()">🔍 OCR Overstrekning (søg)</div>
+        <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Overstrekning — Bulk…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side</div>
+        <div class="mb-item" onclick="autoRotateAll();closeMenus()">↻ Auto-Roter alle markerede</div>
+      </div>
+    </div>
+    <!-- Dokument -->
+    <div class="mb-group">
+      <button class="mb-btn" onclick="toggleMenu('m-doc-dd')">📋 Dokument ▾</button>
+      <div class="mb-menu" id="m-doc-dd">
+        <div class="mb-item" onclick="compressPDF();closeMenus()">⊗ Komprimer PDF</div>
+        <div class="mb-item" onclick="openM('m-wm');closeMenus()">💧 Vandmærke/Stempel…</div>
+        <div class="mb-item" onclick="openM('m-pagenum');closeMenus()">＃ Tilføj sidetal…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="openM('m-convert');closeMenus()">🔄 Konverter PDF…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
+        <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="openApiSettings();closeMenus()">⚙ OCR API-nøgle…</div>
+      </div>
+    </div>
+  </div>
+  <!-- Right: colors + sliders -->
+  <div class="mb-right">
+    <span id="mb-tool-lbl">↖ Vælg</span>
+    <div class="mb-vsep"></div>
+    <div class="color-pick sel" style="background:#eab308" onclick="setColor('#eab308',this)"></div>
+    <div class="color-pick" style="background:#22c55e" onclick="setColor('#22c55e',this)"></div>
+    <div class="color-pick" style="background:#3b82f6" onclick="setColor('#3b82f6',this)"></div>
+    <div class="color-pick" style="background:#ef4444" onclick="setColor('#ef4444',this)"></div>
+    <div class="color-pick" style="background:#a855f7" onclick="setColor('#a855f7',this)"></div>
+    <div class="color-pick" style="background:#000000" onclick="setColor('#000000',this)"></div>
+    <div class="color-pick" style="background:#ffffff;border:2px solid var(--bd2)" onclick="setColor('#ffffff',this)"></div>
+    <div class="mb-vsep"></div>
+    <span style="font-size:10px;color:var(--t3)">Str</span>
+    <input type="range" id="stroke-sz" min="1" max="20" value="3" style="width:50px"/>
+    <span style="font-size:10px;color:var(--t3)">Op</span>
+    <input type="range" id="op-sl" min="10" max="100" value="70" style="width:45px"/>
+    <select id="fnt-sz" style="background:var(--sf2);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:1px 3px;outline:none;height:22px">
+      <option>10</option><option>12</option><option selected>14</option><option>16</option><option>18</option><option>24</option><option>32</option><option>48</option>
+    </select>
+  </div>
+</div>
+
+<!-- WORKSPACE -->
+<div id="workspace">
+
+<!-- PREVIEW MODE -->
+<div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
+  <div id="file-panel">
+    <div id="fp-top">
+      <input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)"/>
+      <button class="btn bGh bSm" onclick="selAll()">☑</button>
+      <button class="btn bGh bSm" onclick="selNone()">☐</button>
+    </div>
+    <div id="file-list-wrap"><div id="file-list"></div></div>
+    <div id="bulk-bar">
+      <div id="bulk-actions">
+        <button class="btn bGh bSm" id="btn-ana" disabled onclick="analyzeBulk()">🔍 Analyser</button>
+        <button class="btn bGh bSm" id="btn-bbm" disabled onclick="openM('m-bbm')">🔖 Bogmærk</button>
+        <button class="btn bGh bSm" id="btn-brot" disabled onclick="bulkRotate()">↻ Roter</button>
+        <button class="btn bGh bSm" id="btn-bwm" disabled onclick="openM('m-wm')">💧 Stempel</button>
+        <button class="btn bGh bSm" id="btn-bpn" disabled onclick="openM('m-pagenum')"># Sidetal</button>
+        <button class="btn bPur bSm" id="btn-grp" disabled onclick="openGroupModal()">⊞ Gruppe</button>
+        <button class="btn bCyn bSm" id="btn-mrg" disabled onclick="openMergeModal()">⊕ Merge</button>
+        <button class="btn bSuc bSm" id="btn-bsv" disabled onclick="smartDownload()">⬇ Download</button>
+      </div>
+      <div id="bulk-sum">Ingen filer</div>
+    </div>
+  </div>
+
+  <div id="preview-area">
+    <div style="display:flex;flex:1;overflow:hidden;position:relative">
+      <div id="cv-container">
+        <div id="cv-sizer">
+          <canvas id="pdf-canvas" style="display:block"></canvas>
+          <canvas id="anno-canvas" style="position:absolute;top:0;left:0;cursor:crosshair"></canvas>
+          <div id="txt-overlay" style="position:absolute;top:0;left:0;pointer-events:none"></div>
+          <div id="search-overlay" style="position:absolute;top:0;left:0;pointer-events:none"></div>
+        </div>
+        <div id="empty-st">
+          <div class="ei">📑</div>
+          <p>Tilføj PDF-filer</p>
+          <p style="font-size:11px;color:var(--t4);margin-top:4px">Træk & slip eller klik + PDF</p>
+          <button class="btn bPri" onclick="triggerFile()" style="margin-top:8px">+ Tilføj PDF</button>
+        </div>
+      </div>
+
+      <!-- COMPARE -->
+      <div id="compare-view">
+        <div id="compare-left">
+          <div class="cmp-bar">
+            <select id="cmp-left-sel" style="background:var(--sf3);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:3px 6px;outline:none;max-width:140px" onchange="renderCompare()"></select>
+            <span style="flex:1"></span>
+            <button class="btn bIcon bXs" onclick="cmpChangePage(-1,'left')">◀</button>
+            <span id="cmp-left-pg" style="font-size:11px;color:var(--t3)">1</span>
+            <button class="btn bIcon bXs" onclick="cmpChangePage(1,'left')">▶</button>
+          </div>
+          <div class="cmp-cv-wrap"><canvas id="cmp-cv-left"></canvas></div>
+        </div>
+        <div id="compare-right">
+          <div class="cmp-bar">
+            <select id="cmp-right-sel" style="background:var(--sf3);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:3px 6px;outline:none;max-width:140px" onchange="renderCompare()"></select>
+            <span style="flex:1"></span>
+            <button class="btn bIcon bXs" onclick="cmpChangePage(-1,'right')">◀</button>
+            <span id="cmp-right-pg" style="font-size:11px;color:var(--t3)">1</span>
+            <button class="btn bIcon bXs" onclick="cmpChangePage(1,'right')">▶</button>
+          </div>
+          <div class="cmp-cv-wrap"><canvas id="cmp-cv-right"></canvas></div>
+        </div>
+      </div>
+
+      <!-- PAGE MGR -->
+      <div id="page-mgr" class="hidden">
+        <div id="pmgr-h">Sider <button class="btn bXs bGh" onclick="togglePageMgr()">✕</button></div>
+        <div id="pt-list"></div>
+        <div id="pmgr-tb">
+          <button class="btn bXs bGh bFull" onclick="delSelPages()">🗑 Slet valgte</button>
+          <button class="btn bXs bGh bFull" style="margin-top:3px" onclick="rotSelPages()">↻ Roter valgte</button>
+          <button class="btn bXs bGh bFull" style="margin-top:3px" onclick="extractSelPages()">⊡ Udtræk</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <div id="rtabs">
+      <div class="rtab active" data-rt="bm" onclick="switchRT('bm')">BM</div>
+      <div class="rtab" data-rt="anno" onclick="switchRT('anno')">ANNO</div>
+      <div class="rtab" data-rt="te" onclick="switchRT('te')">TEKST</div>
+      <div class="rtab" data-rt="sig" onclick="switchRT('sig')">SIGN</div>
+      <div class="rtab" data-rt="meta" onclick="switchRT('meta')">META</div>
+    </div>
+
+    <!-- BM -->
+    <div class="rp active" id="rp-bm">
+      <div id="bm-info"><span id="bm-count">—</span><button class="btn bXs bGh" id="btn-bm-add" disabled onclick="addBm()">+ Tilføj</button></div>
+      <div id="bm-lw"><div id="bm-list"></div></div>
+      <div id="bm-edit-form">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)" id="bm-edit-label">Rediger bogmærke</div>
+        <input id="bm-edit-name" class="bef-inp" type="text" placeholder="Bogmærkenavn"/>
+        <div style="display:flex;gap:6px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+            <label style="font-size:10px;color:var(--t3)">Side nr.</label>
+            <input id="bm-edit-page" class="bef-inp" type="number" min="1"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <label style="font-size:10px;color:var(--t3)">Niveau</label>
+            <select id="bm-edit-level" class="bef-inp" style="padding:5px 6px">
+              <option value="1">◆ Hoved</option>
+              <option value="2">◇ Sub</option>
+              <option value="3">◇◇ Sub-sub</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="btn bSuc bSm bFull" onclick="commitBmEdit()">✓ Gem</button>
+          <button class="btn bGh bSm" onclick="cancelBmEdit()">✕</button>
+        </div>
+      </div>
+      <div id="fn-box">
+        <div style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)">💡 Filnavn forslag</div>
+        <div id="fn-chips"></div>
+        <input id="fn-inp" class="bef-inp" type="text" placeholder="Filnavn…"/>
+        <div style="display:flex;gap:5px">
+          <button class="btn bSuc bSm bFull" onclick="confirmFn()">✓ Brug</button>
+          <button class="btn bGh bSm" onclick="closeFnBox()">✕</button>
+        </div>
+      </div>
+      <div id="bm-tb">
+        <button class="btn bGh bSm" id="btn-bme" disabled onclick="editBm()">✏ Rediger</button>
+        <button class="btn bGh bSm" id="btn-bmt" disabled onclick="toggleBm()">👁</button>
+        <button class="btn bDng bSm" id="btn-bmd" disabled onclick="deleteBm()">🗑</button>
+      </div>
+    </div>
+
+    <!-- ANNO -->
+    <div class="rp" id="rp-anno">
+      <div style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        Annotationer <span id="anno-pg-lbl" style="color:var(--t2);font-size:11px;text-transform:none;font-weight:400">Side —</span>
+      </div>
+      <div id="anno-lw"><div id="anno-list"><div style="padding:14px;text-align:center;color:var(--t3);font-size:11px">Ingen annotationer</div></div></div>
+      <div style="padding:6px;border-top:1px solid var(--bd);flex-shrink:0">
+        <button class="btn bGh bSm bFull" onclick="clearPageAnnos()">🗑 Ryd denne side</button>
+      </div>
+      <!-- OCR Search -->
+      <div id="ocr-search-panel">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">🔍 OCR Overstrekning</div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--t3)">Farve:</span>
+          <div class="redact-cp sel" style="background:#000000" onclick="setRedactColor('#000000',this)"></div>
+          <div class="redact-cp" style="background:#ef4444" onclick="setRedactColor('#ef4444',this)"></div>
+          <div class="redact-cp" style="background:#3b82f6" onclick="setRedactColor('#3b82f6',this)"></div>
+          <div class="redact-cp" style="background:#22c55e" onclick="setRedactColor('#22c55e',this)"></div>
+          <div class="redact-cp" style="background:#eab308" onclick="setRedactColor('#eab308',this)"></div>
+          <div class="redact-cp" style="background:#a855f7" onclick="setRedactColor('#a855f7',this)"></div>
+        </div>
+        <div class="ocr-search-row">
+          <input type="text" id="ocr-search-inp" placeholder="Søgeord…" onkeydown="if(event.key==='Enter')runOCRSearch()"/>
+          <button class="btn bPri bXs" onclick="runOCRSearch()">Søg</button>
+        </div>
+        <div style="font-size:10px;color:var(--t3);padding:2px 0">Søger på aktiv side</div>
+        <div id="ocr-search-results"></div>
+      </div>
+    </div>
+
+    <!-- TEKST -->
+    <div class="rp" id="rp-te">
+      <div id="te-panel">
+        <div id="te-tb">
+          <button class="btn bGh bSm" onclick="extractText()">📖 Hent tekst</button>
+          <button class="btn bGh bSm" id="btn-inline-toggle" onclick="toggleInlineEdit()">✎ Inline</button>
+          <button class="btn bGh bSm" onclick="loadFormFields()">📋 Formular</button>
+          <button class="btn bGh bSm" id="btn-teocr" disabled onclick="runOCR()">🔍 OCR</button>
+          <button class="btn bGh bSm" id="btn-copy-txt" disabled onclick="copyPageText()">📋 Kopiér</button>
+        </div>
+        <div style="font-size:11px;color:var(--t3);flex-shrink:0">Side <span id="te-pgnum">—</span></div>
+        <div id="te-blocks"><div class="te-empty">Klik "Hent tekst" eller "Formular"</div></div>
+      </div>
+    </div>
+
+    <!-- SIGNATUR -->
+    <div class="rp" id="rp-sig">
+      <div id="sig-panel">
+        <div style="font-size:11px;font-weight:700;color:var(--t1)">✍ Signatur</div>
+        <!-- Tabs: draw / type / upload -->
+        <div style="display:flex;gap:4px">
+          <button class="btn bSm" id="sig-tab-draw" style="background:var(--acc);color:#fff" onclick="setSigTab('draw')">✏ Tegn</button>
+          <button class="btn bGh bSm" id="sig-tab-type" onclick="setSigTab('type')">T Skriv</button>
+          <button class="btn bGh bSm" id="sig-tab-upload" onclick="setSigTab('upload')">🖼 Upload</button>
+        </div>
+        <!-- Draw -->
+        <div id="sig-draw-panel">
+          <canvas id="sig-canvas" width="260" height="100"></canvas>
+          <div style="display:flex;gap:5px;margin-top:4px">
+            <button class="btn bGh bXs" onclick="clearSig()">🗑 Ryd</button>
+            <select id="sig-color" style="background:var(--sf2);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:1px 4px;outline:none">
+              <option value="#000000">Sort</option>
+              <option value="#1a3a8f">Blå</option>
+              <option value="#8b0000">Rød</option>
+            </select>
+          </div>
+        </div>
+        <!-- Type -->
+        <div id="sig-type-panel" style="display:none">
+          <input type="text" id="sig-type-inp" class="sig-type-inp" placeholder="Skriv dit navn…" oninput="renderTypedSig(this.value)"/>
+          <select id="sig-font" style="background:var(--sf2);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:4px;outline:none;width:100%;margin-top:4px" onchange="renderTypedSig(document.getElementById('sig-type-inp').value)">
+            <option value="Dancing Script,cursive">Kursiv (håndskrift)</option>
+            <option value="Pacifico,cursive">Rund kursiv</option>
+            <option value="Georgia,serif">Klassisk serif</option>
+            <option value="Arial,sans-serif">Enkel</option>
+          </select>
+          <canvas id="sig-type-canvas" width="260" height="80" style="border:1px solid var(--bd);border-radius:var(--r);background:#fff;margin-top:4px;display:block;width:100%"></canvas>
+        </div>
+        <!-- Upload -->
+        <div id="sig-upload-panel" style="display:none">
+          <input type="file" id="sig-file-input" accept="image/*" style="display:none" onchange="loadSigImage(this)"/>
+          <button class="btn bGh bFull" onclick="document.getElementById('sig-file-input').click()">🖼 Vælg signaturbillede…</button>
+          <canvas id="sig-upload-canvas" width="260" height="80" style="border:1px solid var(--bd);border-radius:var(--r);background:#fff;margin-top:4px;display:none;width:100%"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--t2);margin-top:4px">Størrelse på siden:</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:10px;color:var(--t3)">B:</span>
+          <input type="range" id="sig-w" min="40" max="400" value="160" style="flex:1;height:4px"/>
+          <span id="sig-w-val" style="font-size:10px;color:var(--t3)">160px</span>
+        </div>
+        <button class="btn bPri bFull" onclick="placeSigOnPage()">✓ Placer på siden</button>
+        <div style="font-size:10px;color:var(--t3)">Klik for at placere — derefter kan du trække den til den rigtige position</div>
+      </div>
+    </div>
+
+    <!-- META -->
+    <div class="rp" id="rp-meta">
+      <div id="meta-p">
+        <div style="font-size:11px;color:var(--t3)">Dokumentegenskaber</div>
+        <div class="mf"><label>Titel</label><input class="mi" id="m-title" type="text"/></div>
+        <div class="mf"><label>Forfatter</label><input class="mi" id="m-author" type="text"/></div>
+        <div class="mf"><label>Emne</label><input class="mi" id="m-subject" type="text"/></div>
+        <div class="mf"><label>Nøgleord</label><input class="mi" id="m-keywords" type="text"/></div>
+        <div class="mf"><label>Creator</label><input class="mi" id="m-creator" type="text"/></div>
+        <div class="mf"><label>Oprettet</label><input class="mi" id="m-created" readonly style="color:var(--t3)"/></div>
+        <button class="btn bPri bSm bFull" id="btn-meta-ok" disabled onclick="applyMeta()" style="margin-top:4px">✓ Gem metadata</button>
+        <div class="mf" style="margin-top:8px"><label style="cursor:pointer" onclick="toggleRaw()">▸ Rå info</label><pre id="m-raw" style="display:none;background:var(--sf2);border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:10px;color:var(--t3);white-space:pre-wrap;max-height:120px;overflow-y:auto;margin-top:4px"></pre></div>
+      </div>
+    </div>
+  </div>
+</div><!-- /preview-mode -->
+
+<!-- LIST MODE -->
+<div id="list-mode">
+  <div id="list-tb">
+    <input id="list-srch" type="text" placeholder="Søg filnavn…" oninput="renderListMode()"/>
+    <button class="btn bGh bSm" onclick="selAll();renderListMode()">☑ Alle</button>
+    <button class="btn bGh bSm" onclick="selNone();renderListMode()">☐ Ingen</button>
+    <button class="btn bDng bSm" onclick="deleteSelected()">🗑 Slet markerede</button>
+    <div class="vsep"></div>
+    <button class="btn bGh bSm" onclick="analyzeBulk()">🔍 Analyser</button>
+    <button class="btn bGh bSm" onclick="openM('m-bbm')">🔖 Bogmærk</button>
+    <button class="btn bGh bSm" onclick="bulkRotate()">↻ Roter 90°</button>
+    <button class="btn bGh bSm" onclick="autoRotateAll()">↻ Auto-Roter OCR</button>
+    <button class="btn bGh bSm" onclick="openM('m-ocr-bulk')">🔍 OCR Overstrekning</button>
+    <button class="btn bGh bSm" onclick="openM('m-pagenum')"># Sidetal</button>
+    <button class="btn bCyn bSm" onclick="openMergeModal()">⊕ Merge</button>
+    <button class="btn bSuc bSm" onclick="smartDownload()">⬇ Download</button>
+  </div>
+  <div id="list-wrap"><div id="list-cont"></div></div>
+</div>
+
+</div><!-- /workspace -->
+</div><!-- /app -->
+
+<!-- ================================================================ MODALS ================================================================ -->
+
+<!-- API SETTINGS -->
+<div class="mbk" id="m-api-settings">
+  <div class="mdl" style="width:440px">
+    <div class="mhd">⚙ OCR API-nøgle <button onclick="closeM('m-api-settings')">✕</button></div>
+    <div class="mbd">
+      <div class="mfield"><label>Google Vision API Nøgle</label><input class="minput" id="api-key-update" type="password" placeholder="AIza..."/></div>
+      <div style="font-size:11px;color:var(--t3)">Nøglen gemmes i localStorage i din browser. Opret på <a href="https://console.cloud.google.com/apis/library/vision.googleapis.com" target="_blank" style="color:var(--acc)">Google Cloud Console</a>.</div>
+    </div>
+    <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-api-settings')">Annuller</button><button class="btn bPri bSm" onclick="updateApiKey()">✓ Gem</button></div>
+  </div>
+</div>
+
+<!-- GROUP -->
+<div class="mbk" id="m-group"><div class="mdl" style="width:400px">
+  <div class="mhd">⊞ Opret gruppe <button onclick="closeM('m-group')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)" id="grp-info">—</div>
+    <div class="mfield"><label>Gruppenavn</label><input class="minput" id="grp-name" type="text"/></div>
+    <div class="mfield"><label>Farve</label><div style="display:flex;gap:6px;margin-top:2px" id="grp-colors">
+      <div class="gc0" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(0)"></div>
+      <div class="gc1" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(1)"></div>
+      <div class="gc2" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(2)"></div>
+      <div class="gc3" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(3)"></div>
+      <div class="gc4" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(4)"></div>
+      <div class="gc5" style="width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent" onclick="selGC(5)"></div>
+    </div></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-group')">Annuller</button><button class="btn bPri bSm" onclick="createGroup()">Opret</button></div>
+</div></div>
+
+<!-- MERGE -->
+<div class="mbk" id="m-merge"><div class="mdl">
+  <div class="mhd">⊕ Merge <button onclick="closeM('m-merge')">✕</button></div>
+  <div class="mbd">
+    <div class="mfield"><label>Output filnavn</label><input class="minput" id="mrg-name" type="text" value="merged_output.pdf"/></div>
+    <div class="mfield"><label>Hoved-bogmærke (valgfrit)</label><input class="minput" id="mrg-root" type="text" placeholder="F.eks. 84747041"/></div>
+    <div id="mrg-prev" style="font-size:11px;color:var(--t3);max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--r);padding:6px;background:var(--sf2)"></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-merge')">Annuller</button><button class="btn bCyn bSm" onclick="doMerge()">⊕ Merge & download</button></div>
+</div></div>
+
+<!-- BULK BM -->
+<div class="mbk" id="m-bbm"><div class="mdl">
+  <div class="mhd">🔖 Bulk bogmærker <button onclick="closeM('m-bbm')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)">Struktur: <b>Hoved = ref.nr.</b> fra filnavn · Sub = Certificate</div>
+    <div class="mfield"><label>Sub-titel</label><input class="minput" id="bbm-sub" type="text" value="Certificate"/></div>
+    <div class="mfield"><label>Hoved-kilde</label>
+      <select class="minput" id="bbm-hsrc" onchange="document.getElementById('bbm-cw').style.display=this.value==='custom'?'flex':'none'">
+        <option value="refnum">Ref.nr. fra filnavn</option>
+        <option value="fullname">Fuldt filnavn</option>
+        <option value="custom">Angiv selv</option>
+      </select></div>
+    <div class="mfield" id="bbm-cw" style="display:none"><label>Tekst</label><input class="minput" id="bbm-ct" type="text"/></div>
+    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="bbm-ow" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Overskriv eksisterende</span></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-bbm')">Annuller</button><button class="btn bPri bSm" onclick="doBulkBm()">🔖 Anvend</button></div>
+</div></div>
+
+<!-- WATERMARK -->
+<div class="mbk" id="m-wm"><div class="mdl">
+  <div class="mhd">💧 Vandmærke/Stempel <button onclick="closeM('m-wm')">✕</button></div>
+  <div class="mbd">
+    <div class="mfield"><label>Tekst</label><input class="minput" id="wm-txt" type="text" value="FORTROLIGT"/></div>
+    <div class="mfield"><label>Placering</label><select class="minput" id="wm-pos"><option value="center">Midt (diagonal)</option><option value="bottom">Bund</option><option value="top">Top</option></select></div>
+    <div class="mfield"><label>Gennemsigtighed <span id="wm-opv">20%</span></label><input type="range" id="wm-op" min="5" max="60" value="20" style="width:100%" oninput="document.getElementById('wm-opv').textContent=this.value+'%'"/></div>
+    <div class="mfield"><label>Størrelse</label><input class="minput" type="number" id="wm-sz" value="64" min="20" max="200"/></div>
+    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="wm-all" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Alle sider</span></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-wm')">Annuller</button><button class="btn bPri bSm" onclick="doWatermark()">💧 Anvend</button></div>
+</div></div>
+
+<!-- PAGE NUMBERS -->
+<div class="mbk" id="m-pagenum"><div class="mdl" style="width:420px">
+  <div class="mhd">＃ Tilføj sidetal <button onclick="closeM('m-pagenum')">✕</button></div>
+  <div class="mbd">
+    <div class="mfield"><label>Placering</label><select class="minput" id="pn-pos"><option value="bottom-center">Bund midt</option><option value="bottom-right">Bund højre</option><option value="bottom-left">Bund venstre</option><option value="top-center">Top midt</option><option value="top-right">Top højre</option></select></div>
+    <div class="mfield"><label>Format</label><select class="minput" id="pn-format"><option value="n">1, 2, 3…</option><option value="n-of-t">1 / 5, 2 / 5…</option><option value="prefix">Side 1, Side 2…</option></select></div>
+    <div class="mfield"><label>Start fra side</label><input class="minput" id="pn-start" type="number" value="1" min="1"/></div>
+    <div class="mfield"><label>Skriftstørrelse</label><input class="minput" id="pn-size" type="number" value="11" min="6" max="36"/></div>
+    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="pn-bulk" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Alle markerede filer</span></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-pagenum')">Annuller</button><button class="btn bPri bSm" onclick="doPageNumbers()">＃ Tilføj</button></div>
+</div></div>
+
+<!-- SPLIT -->
+<div class="mbk" id="m-split"><div class="mdl">
+  <div class="mhd">✂ Split <button onclick="closeM('m-split')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)" id="split-info">—</div>
+    <div class="mfield"><label>Metode</label><select class="minput" id="split-mode" onchange="updSplitUI()"><option value="each">Én fil per side</option><option value="range">Sidebånd (1-3, 4-7)</option><option value="atpage">Split ved side nr.</option></select></div>
+    <div class="mfield" id="split-rw" style="display:none"><label>Sidebånd</label><input class="minput" id="split-r" type="text" placeholder="1-3, 4-7"/></div>
+    <div class="mfield" id="split-aw" style="display:none"><label>Side nr.</label><input class="minput" id="split-a" type="number" min="2"/></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-split')">Annuller</button><button class="btn bPri bSm" onclick="doSplit()">✂ Split</button></div>
+</div></div>
+
+<!-- EXTRACT -->
+<div class="mbk" id="m-extract"><div class="mdl" style="width:420px">
+  <div class="mhd">⊡ Udtræk sider <button onclick="closeM('m-extract')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)" id="extract-info">—</div>
+    <div class="mfield"><label>Sider (f.eks. 1, 3, 5-8)</label><input class="minput" id="extract-pages" type="text" placeholder="1, 3, 5-8"/></div>
+    <div class="mfield"><label>Output filnavn</label><input class="minput" id="extract-name" type="text" placeholder="extracted.pdf"/></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-extract')">Annuller</button><button class="btn bPri bSm" onclick="doExtract()">⊡ Udtræk</button></div>
+</div></div>
+
+<!-- CONVERT -->
+<div class="mbk" id="m-convert"><div class="mdl" style="width:420px">
+  <div class="mhd">🔄 Konverter <button onclick="closeM('m-convert')">✕</button></div>
+  <div class="mbd">
+    <div class="mfield"><label>Type</label>
+      <select class="minput" id="convert-type">
+        <option value="to-jpg">PDF → JPG billeder (ZIP)</option>
+        <option value="to-png">PDF → PNG billeder (ZIP)</option>
+      </select></div>
+    <div class="mfield"><label>Opløsning (skala)</label><input class="minput" id="convert-scale" type="number" value="2" min="1" max="4" step=".5"/></div>
+    <div style="font-size:11px;color:var(--t3)">Alle sider konverteres til billeder og pakkes i ZIP.</div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-convert')">Annuller</button><button class="btn bPri bSm" onclick="doConvert()">🔄 Konverter</button></div>
+</div></div>
+
+<!-- PASSWORD -->
+<div class="mbk" id="m-pwd"><div class="mdl" style="width:380px">
+  <div class="mhd">🔒 Adgangskode <button onclick="closeM('m-pwd')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)">Kryptering kræver server-side software. Denne funktion markerer filen visuelt med et vandmærke "BESKYTTET" som alternativ.</div>
+    <div class="mfield"><label>Vandmærke-tekst</label><input class="minput" id="pwd-txt" type="text" value="BESKYTTET"/></div>
+    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="pwd-bulk"/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Alle markerede</span></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-pwd')">Annuller</button><button class="btn bAmb bSm" onclick="doPwdMark()">💧 Tilføj vandmærke</button></div>
+</div></div>
+
+<!-- OCR BULK -->
+<div class="mbk" id="m-ocr-bulk"><div class="mdl">
+  <div class="mhd">🔍 OCR Overstrekning — Bulk <button onclick="closeM('m-ocr-bulk')">✕</button></div>
+  <div class="mbd">
+    <div style="font-size:12px;color:var(--t2)">Søger i alle markerede filer efter tekst via OCR og overstreger automatisk på alle sider.</div>
+    <div class="mfield"><label>Søgetekst</label><input class="minput" id="ocr-bulk-term" type="text" placeholder="F.eks. 84747041"/></div>
+    <div class="mfield"><label>Farve</label>
+      <div style="display:flex;gap:6px;margin-top:3px">
+        <div class="bulk-rcp sel" style="width:22px;height:22px;border-radius:50%;background:#000;cursor:pointer;border:2px solid #fff;flex-shrink:0" onclick="setBulkRC('#000000',this)"></div>
+        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#ef4444',this)"></div>
+        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#3b82f6',this)"></div>
+        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#22c55e',this)"></div>
+        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#eab308;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#eab308',this)"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="ocr-use-bm" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Brug bogmærke-titel som søgeord</span></div>
+    <div id="ocr-bulk-results" style="max-height:160px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px"></div>
+  </div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-ocr-bulk')">Luk</button><button class="btn bPri bSm" onclick="runBulkOCRSearch()">🔍 Søg & Overstreg</button></div>
+</div></div>
+
+<div id="toast"></div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+// ================================================================
+// GOOGLE FONTS for signature
+// ================================================================
+(function(){
+  const l=document.createElement('link');
+  l.rel='stylesheet';
+  l.href='https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Pacifico&display=swap';
+  document.head.appendChild(l);
+})();
+
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+// ================================================================
+// STATE
+// ================================================================
+const S={
+  files:[],activeIdx:-1,page:1,totalPages:0,zoom:1.0,rotation:0,renderTask:null,
+  bms:[],selBm:-1,customFn:null,
+  groups:[],_gc:0,
+  _search:'',_mode:'preview',_pvHidden:false,
+  _pageMgrOpen:false,_selPages:new Set(),
+  // Annotation
+  tool:'select',color:'#eab308',strokeSize:3,opacity:0.7,fontSize:14,
+  annos:{},_drawing:false,_startX:0,_startY:0,_currentPoints:[],_activeTextInput:null,
+  // OCR
+  redactColor:'#000000',
+  // Text search
+  _searchMatches:[],_searchIdx:0,_searchText:'',
+  // Compare
+  _compareOpen:false,_cmpLeft:{fileIdx:-1,page:1},_cmpRight:{fileIdx:-1,page:1},
+  // Progress
+  _cancelProgress:false,
+  // Text edits
+  _textEdits:{},_imgElements:{},_formFields:{},_inlineEditMode:false,_selEl:null,_drag:null,
+  // Signature
+  _sigDrawing:false,_sigLastX:0,_sigLastY:0,_sigTab:'draw',
+  // API
+  apiKey:'',
+};
+
+// ================================================================
+// API KEY
+// ================================================================
+function initApiKey(){
+  S.apiKey=localStorage.getItem('ptp_api_key')||'';
+  if(S.apiKey){document.getElementById('api-setup').classList.add('hidden');}
+}
+function saveApiKey(){
+  const v=document.getElementById('api-key-inp').value.trim();
+  if(!v){toast('Indtast en API-nøgle',true);return;}
+  S.apiKey=v;localStorage.setItem('ptp_api_key',v);
+  document.getElementById('api-setup').classList.add('hidden');
+  toast('API-nøgle gemt ✓','ok');
+}
+function skipApiKey(){document.getElementById('api-setup').classList.add('hidden');}
+function openApiSettings(){
+  document.getElementById('api-key-update').value=S.apiKey;openM('m-api-settings');
+}
+function updateApiKey(){
+  const v=document.getElementById('api-key-update').value.trim();
+  S.apiKey=v;if(v)localStorage.setItem('ptp_api_key',v);else localStorage.removeItem('ptp_api_key');
+  closeM('m-api-settings');toast('Gemt ✓','ok');
+}
+
+// ================================================================
+// INIT
+// ================================================================
+showEmpty(true);updateBulkSum();initApiKey();
+document.querySelectorAll('.mbk').forEach(bk=>bk.addEventListener('click',e=>{if(e.target===bk)bk.classList.remove('open');}));
+document.getElementById('stroke-sz').addEventListener('input',e=>S.strokeSize=parseInt(e.target.value));
+document.getElementById('op-sl').addEventListener('input',e=>S.opacity=parseInt(e.target.value)/100);
+document.getElementById('fnt-sz').addEventListener('change',e=>S.fontSize=parseInt(e.target.value));
+document.getElementById('sig-w').addEventListener('input',e=>document.getElementById('sig-w-val').textContent=e.target.value+'px');
+document.addEventListener('click',e=>{if(!e.target.closest('.mb-group')&&!e.target.closest('.mb-menu'))closeMenus();});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();toggleSearch();}
+  if(e.key==='Escape'){closeSearch();cancelBmEdit();}
+  if((e.key==='Delete'||e.key==='Backspace')&&S._selEl&&document.activeElement!==S._selEl&&!document.activeElement.isContentEditable){
+    e.preventDefault();deleteSelectedEl();
+  }
+});
+// Drag for overlay elements
+document.addEventListener('mousemove',e=>{
+  if(!S._drag)return;
+  const dx=e.clientX-S._drag.sx,dy=e.clientY-S._drag.sy;
+  S._drag.el.style.left=(S._drag.sl+dx)+'px';
+  S._drag.el.style.top=(S._drag.st+dy)+'px';
+});
+document.addEventListener('mouseup',e=>{
+  if(!S._drag)return;
+  const{el,type,idx,data}=S._drag;
+  data.vx=parseFloat(el.style.left);data.vy=parseFloat(el.style.top);
+  if(type==='text')data.vy+=data.vfs||12;
+  // Convert back to PDF coords
+  if(S.activeIdx>=0){
+    const f=S.files[S.activeIdx];
+    f.pdfJsDoc.getPage(S.page).then(page=>{
+      const pr=(f.pageRotations&&f.pageRotations[S.page])||0;
+      const vp=page.getViewport({scale:S.zoom,rotation:(S.rotation+pr)%360});
+      const pt=vp.convertToPdfPoint(data.vx,data.vy);
+      data.newPdfX=pt[0];data.newPdfY=pt[1];
+    });
+  }
+  S._drag=null;
+});
+
+// ================================================================
+// MENUS
+// ================================================================
+function toggleMenu(id){
+  const menu=document.getElementById(id);const wasOpen=menu.classList.contains('mopen');closeMenus();
+  if(!wasOpen){
+    const btn=menu.closest('.mb-group').querySelector('.mb-btn');
+    const r=btn.getBoundingClientRect();
+    menu.style.top=r.bottom+'px';menu.style.left=r.left+'px';
+    menu.classList.add('mopen');btn.classList.add('mopen');
+  }
+}
+function closeMenus(){
+  document.querySelectorAll('.mb-menu.mopen').forEach(m=>m.classList.remove('mopen'));
+  document.querySelectorAll('.mb-btn.mopen').forEach(b=>b.classList.remove('mopen'));
+}
+
+// ================================================================
+// MODE
+// ================================================================
+function setMode(m){
+  if(S._mode==='list'&&m==='preview'){flushListBmEdits();}
+  S._mode=m;
+  document.getElementById('preview-mode').style.display=m==='preview'?'flex':'none';
+  document.getElementById('list-mode').classList.toggle('active',m==='list');
+  document.getElementById('btn-pm').classList.toggle('active',m==='preview');
+  document.getElementById('btn-lm').classList.toggle('active',m==='list');
+  document.getElementById('preview-nav').style.display=m==='preview'?'flex':'none';
+  if(m==='list')renderListMode();
+  if(m==='preview'&&S.activeIdx>=0){
+    const f=S.files[S.activeIdx];
+    if(f._existingBms){S.bms=f._existingBms.map(b=>({...b}));renderBmList();document.getElementById('bm-count').textContent=S.bms.length?S.bms.length+' bogmærker':'Ingen';}
+  }
+}
+function flushListBmEdits(){
+  document.querySelectorAll('.lbn[data-fi][data-bi]').forEach(node=>{
+    const fi=parseInt(node.dataset.fi),bi=parseInt(node.dataset.bi);
+    const span=node.querySelector('.lbn-txt');
+    if(span&&S.files[fi]&&S.files[fi]._existingBms[bi]){const v=span.textContent.trim();if(v)S.files[fi]._existingBms[bi].title=v;}
+  });
+}
+function toggleFilePanel(){document.getElementById('file-panel').classList.toggle('collapsed');}
+function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('preview-area').classList.toggle('hidden',S._pvHidden);document.getElementById('right-panel').classList.toggle('hidden',S._pvHidden);document.getElementById('btn-pv').textContent=S._pvHidden?'⊞':'⊟';}
+
+// ================================================================
+// FILE HANDLING
+// ================================================================
+function triggerFile(){document.getElementById('file-input').click();}
+document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',async e=>{e.preventDefault();await handleFiles(Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf')));});
+
+async function handleFiles(newFiles){
+  for(const f of newFiles){
+    const ab=await f.arrayBuffer();
+    S.files.push({name:f.name,buf:ab.slice(0),pdfJsDoc:null,pdfLibDoc:null,rotation:0,
+      bulkSel:true,bulkStatus:'pending',bulkAction:'keep',bulkNewBm:null,_existingBms:[],
+      groupId:null,pendingRotation:0,deletedPages:new Set(),pageRotations:{},
+      _viewRotation:0,_hasBm:false,_hasOcr:false,_hasRotation:false});
+  }
+  renderFileList();updateBulkSum();
+  document.getElementById('btn-ana').disabled=false;
+  document.getElementById('btn-bsv').disabled=false;
+  if(S.files.length===1&&S.activeIdx===-1)await openFile(0);
+  if(S._mode==='list')renderListMode();
+  setTimeout(()=>analyzeBulkSilent(),300);
+}
+
+function getAnnos(fi,pg){if(!S.annos[fi])S.annos[fi]={};if(!S.annos[fi][pg])S.annos[fi][pg]=[];return S.annos[fi][pg];}
+function getTextEdits(fi,pg){if(!S._textEdits[fi])S._textEdits[fi]={};if(!S._textEdits[fi][pg])S._textEdits[fi][pg]=[];return S._textEdits[fi][pg];}
+function getImgEls(fi,pg){if(!S._imgElements[fi])S._imgElements[fi]={};if(!S._imgElements[fi][pg])S._imgElements[fi][pg]=[];return S._imgElements[fi][pg];}
+
+function fileBadges(f){
+  let b='';
+  if(f.bulkStatus==='ok')b+='<span class="badge bOk">✓ BM</span>';
+  else if(f.bulkStatus==='none')b+='<span class="badge bNone">⚠ Ingen BM</span>';
+  if(f._hasOcr)b+='<span class="badge bOcr">👁 OCR</span>';
+  if(f._hasRotation)b+='<span class="badge bRot">↻</span>';
+  return b;
+}
+
+function renderFileList(){
+  const list=document.getElementById('file-list');const term=S._search.toLowerCase();list.innerHTML='';
+  S.files.forEach((f,i)=>{
+    if(term&&!f.name.toLowerCase().includes(term))return;
+    const grp=f.groupId!==null?S.groups.find(g=>g.id===f.groupId):null;
+    const el=document.createElement('div');el.className='fi'+(i===S.activeIdx?' active':'');
+    el.innerHTML=`<div class="fi-cb ${f.bulkSel?'on':''}" onclick="toggleSel(event,${i})">${f.bulkSel?'✓':''}</div>
+      <span style="font-size:13px">📄</span>
+      <div class="fi-body">
+        <div class="fi-name" title="${escH(f.name)}">${escH(f.name)}</div>
+        <div class="fi-badges">${fileBadges(f)}${grp?`<span class="grp-chip gc${grp.colorIdx}">${escH(grp.name.substring(0,10))}</span>`:''}</div>
+      </div>
+      <span class="fi-del" onclick="removeFile(event,${i})">✕</span>`;
+    el.addEventListener('click',()=>openFile(i));list.appendChild(el);
+  });
+}
+function removeFile(e,idx){
+  e.stopPropagation();S.files.splice(idx,1);
+  const na={};Object.keys(S.annos).forEach(k=>{const ki=parseInt(k);if(ki<idx)na[ki]=S.annos[ki];else if(ki>idx)na[ki-1]=S.annos[ki];});S.annos=na;
+  if(S.activeIdx===idx){S.activeIdx=-1;clearAll();}else if(S.activeIdx>idx)S.activeIdx--;
+  renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();
+}
+function filterFiles(v){S._search=v;renderFileList();}
+function selAll(){S.files.forEach(f=>f.bulkSel=true);renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();}
+function selNone(){S.files.forEach(f=>f.bulkSel=false);renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();}
+function toggleSel(e,idx){e.stopPropagation();S.files[idx].bulkSel=!S.files[idx].bulkSel;renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();}
+function updateBulkSum(){
+  const sel=S.files.filter(f=>f.bulkSel).length;
+  document.getElementById('bulk-sum').textContent=S.files.length===0?'Ingen filer':`${sel} af ${S.files.length} markeret`;
+  const has=sel>0;
+  ['btn-bbm','btn-brot','btn-bwm','btn-bpn','btn-grp','btn-mrg','btn-bsv'].forEach(id=>document.getElementById(id).disabled=!has);
+}
+function deleteSelected(){
+  const c=S.files.filter(f=>f.bulkSel).length;if(!c){toast('Ingen markeret',true);return;}
+  if(!confirm(`Slet ${c} fil(er)?`))return;
+  for(let i=S.files.length-1;i>=0;i--){if(S.files[i].bulkSel){S.files.splice(i,1);if(S.activeIdx===i){S.activeIdx=-1;clearAll();}else if(S.activeIdx>i)S.activeIdx--;}}
+  renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();
+}
+
+// ================================================================
+// OPEN FILE
+// ================================================================
+async function openFile(idx){
+  if(idx===S.activeIdx)return;
+  if(S.activeIdx>=0&&S.activeIdx<S.files.length)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
+  if(S._mode==='list')flushListBmEdits();
+  S.activeIdx=idx;S.page=1;S.zoom=1.0;
+  S.rotation=S.files[idx]._viewRotation||0;
+  S.customFn=null;closeFnBox();cancelBmEdit();
+  prog(20);const f=S.files[idx];
+  try{
+    if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
+    if(!f.pdfLibDoc){prog(60);f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});}
+    S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
+    await renderPage();renderFileList();await loadBms(f);loadMeta(f);
+    if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
+    ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
+      .forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=false;});
+    document.getElementById('te-pgnum').textContent=S.page;
+    if(S._compareOpen)populateCompareSelects();
+    prog(100);
+  }catch(err){toast('Fejl ved åbning: '+err.message,true);prog(0);}
+}
+
+// ================================================================
+// RENDER PAGE
+// ================================================================
+async function renderPage(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  if(S.renderTask){S.renderTask.cancel();S.renderTask=null;}
+  const page=await f.pdfJsDoc.getPage(S.page);
+  const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+  const sc=S.zoom*window.devicePixelRatio;
+  const vp=page.getViewport({scale:sc,rotation:(S.rotation+pageRot)%360});
+  const cv=document.getElementById('pdf-canvas');const av=document.getElementById('anno-canvas');
+  const W=vp.width,H=vp.height;
+  [cv,av].forEach(c=>{c.width=W;c.height=H;c.style.width=(W/window.devicePixelRatio)+'px';c.style.height=(H/window.devicePixelRatio)+'px';});
+  const sizer=document.getElementById('cv-sizer');
+  sizer.style.width=(W/window.devicePixelRatio)+'px';sizer.style.height=(H/window.devicePixelRatio)+'px';
+  S.renderTask=page.render({canvasContext:cv.getContext('2d'),viewport:vp});
+  try{await S.renderTask.promise;}catch(e){}S.renderTask=null;
+  document.getElementById('pn-inp').value=S.page;
+  document.getElementById('pn-tot').textContent='/ '+S.totalPages;
+  document.getElementById('zoom-lbl').textContent=Math.round(S.zoom*100)+'%';
+  document.getElementById('te-pgnum').textContent=S.page;
+  document.getElementById('anno-pg-lbl').textContent='Side '+S.page;
+  redrawAnnos();setupAnnoEvents();
+  if(S._searchText)renderSearchHighlights();
+  if(S._inlineEditMode)refreshTextOverlay();
+}
+
+// ================================================================
+// TEXT SEARCH
+// ================================================================
+function toggleSearch(){document.getElementById('search-bar').classList.toggle('show');if(document.getElementById('search-bar').classList.contains('show'))document.getElementById('sb-inp').focus();}
+function closeSearch(){document.getElementById('search-bar').classList.remove('show');S._searchMatches=[];S._searchText='';document.getElementById('search-overlay').innerHTML='';document.getElementById('sb-info').textContent='0 / 0';}
+function sbKey(e){if(e.key==='Enter')sbNav(1);if(e.key==='Escape')closeSearch();}
+async function searchText(term){
+  S._searchText=term;S._searchMatches=[];S._searchIdx=0;
+  document.getElementById('search-overlay').innerHTML='';
+  if(!term||term.length<2||S.activeIdx<0){document.getElementById('sb-info').textContent='0 / 0';return;}
+  const f=S.files[S.activeIdx];const page=await f.pdfJsDoc.getPage(S.page);
+  const content=await page.getTextContent();const vp=page.getViewport({scale:S.zoom});
+  const tl=term.toLowerCase();
+  content.items.forEach(item=>{
+    if(item.str.toLowerCase().includes(tl)){
+      const tx=item.transform;const vxArr=vp.convertToViewportPoint(tx[4],tx[5]);
+      S._searchMatches.push({x:vxArr[0],y:vxArr[1]-item.height*S.zoom,w:item.width*S.zoom,h:item.height*S.zoom+4});
+    }
+  });
+  document.getElementById('sb-info').textContent=S._searchMatches.length?`1 / ${S._searchMatches.length}`:'0 / 0';
+  renderSearchHighlights();
+}
+function renderSearchHighlights(){
+  const overlay=document.getElementById('search-overlay');overlay.innerHTML='';
+  S._searchMatches.forEach((m,i)=>{
+    const div=document.createElement('div');div.className='search-hl'+(i===S._searchIdx?' current':'');
+    div.style.cssText=`left:${m.x}px;top:${m.y}px;width:${Math.max(m.w,20)}px;height:${Math.max(m.h,14)}px`;
+    overlay.appendChild(div);
+  });
+}
+function sbNav(d){
+  if(!S._searchMatches.length)return;
+  S._searchIdx=(S._searchIdx+d+S._searchMatches.length)%S._searchMatches.length;
+  document.getElementById('sb-info').textContent=`${S._searchIdx+1} / ${S._searchMatches.length}`;
+  renderSearchHighlights();
+  const m=S._searchMatches[S._searchIdx];
+  document.getElementById('cv-container').scrollTo({top:m.y-100,behavior:'smooth'});
+}
+
+// ================================================================
+// ANNOTATIONS
+// ================================================================
+function setTool(t){
+  S.tool=t;finishTextInput();
+  const av=document.getElementById('anno-canvas');if(av)av.style.cursor=t==='select'?'default':t==='text'?'text':'crosshair';
+  if(t==='redact'||t==='highlight')switchRT('anno');
+  const names={select:'↖ Vælg',highlight:'▮ Fremhæv',redact:'█ Overstreg',pen:'✏ Pen',text:'T Tekst',rect:'□ Kasse',circle:'○ Cirkel',line:'╱ Linje',arrow:'→ Pil'};
+  const ind=document.getElementById('mb-tool-lbl');if(ind)ind.textContent=names[t]||t;
+}
+function setColor(c,el){S.color=c;document.querySelectorAll('#menubar .color-pick').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
+function setRedactColor(c,el){S.redactColor=c;document.querySelectorAll('.redact-cp').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
+function setBulkRC(c,el){S.redactColor=c;document.querySelectorAll('.bulk-rcp').forEach(p=>p.style.border='2px solid transparent');el.style.border='2px solid #fff';}
+
+function setupAnnoEvents(){const av=document.getElementById('anno-canvas');av.onmousedown=startDraw;av.onmousemove=moveDraw;av.onmouseup=endDraw;av.onmouseleave=endDraw;}
+function canvasCoords(e){const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();const dpr=window.devicePixelRatio;return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr};}
+function startDraw(e){if(S.tool==='select')return;if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
+function moveDraw(e){
+  if(!S._drawing)return;const{x,y}=canvasCoords(e);S._currentPoints.push({x,y});
+  const av=document.getElementById('anno-canvas');redrawAnnos();
+  drawAnno(av.getContext('2d'),{type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity});
+}
+function endDraw(e){
+  if(!S._drawing)return;S._drawing=false;const{x,y}=canvasCoords(e);
+  const dx=Math.abs(x-S._startX),dy=Math.abs(y-S._startY);if(dx<3&&dy<3&&S.tool!=='pen')return;
+  const annos=getAnnos(S.activeIdx,S.page);
+  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize});
+  redrawAnnos();renderAnnoList();S._currentPoints=[];
+}
+function redrawAnnos(){const av=document.getElementById('anno-canvas');if(!av.width)return;const ctx=av.getContext('2d');ctx.clearRect(0,0,av.width,av.height);getAnnos(S.activeIdx,S.page).forEach(a=>drawAnno(ctx,a));}
+function drawAnno(ctx,a){
+  ctx.save();ctx.globalAlpha=a.opacity;const dpr=window.devicePixelRatio;
+  switch(a.type){
+    case 'highlight':ctx.fillStyle=a.color;ctx.globalAlpha=a.opacity*.4;ctx.fillRect(a.x,a.y,a.w,a.h||20*dpr);break;
+    case 'redact':ctx.fillStyle=a.color||'#000';ctx.globalAlpha=1;ctx.fillRect(a.x,a.y,a.w||20*dpr,a.h||20*dpr);break;
+    case 'pen':if(!a.points||a.points.length<2)break;ctx.strokeStyle=a.color;ctx.lineWidth=a.strokeSize;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(a.points[0].x,a.points[0].y);a.points.forEach(p=>ctx.lineTo(p.x,p.y));ctx.stroke();break;
+    case 'rect':ctx.strokeStyle=a.color;ctx.lineWidth=a.strokeSize;ctx.strokeRect(a.x,a.y,a.w,a.h);break;
+    case 'circle':ctx.strokeStyle=a.color;ctx.lineWidth=a.strokeSize;ctx.beginPath();ctx.ellipse(a.x+a.w/2,a.y+a.h/2,a.w/2,a.h/2,0,0,Math.PI*2);ctx.stroke();break;
+    case 'line':ctx.strokeStyle=a.color;ctx.lineWidth=a.strokeSize;ctx.beginPath();ctx.moveTo(a.x1,a.y1);ctx.lineTo(a.x2,a.y2);ctx.stroke();break;
+    case 'arrow':drawArrow(ctx,a.x1,a.y1,a.x2,a.y2,a.color,a.strokeSize);break;
+    case 'text':if(a.text){ctx.fillStyle=a.color;ctx.globalAlpha=1;ctx.font=`${(a.fontSize||14)*dpr}px Segoe UI,sans-serif`;a.text.split('\n').forEach((ln,i)=>ctx.fillText(ln,a.x,a.y+(i+1)*(a.fontSize||14)*dpr));}break;
+    case 'image':if(a._img){ctx.globalAlpha=a.opacity;ctx.drawImage(a._img,a.x,a.y,a.w,a.h);}break;
+  }
+  ctx.restore();
+}
+function drawArrow(ctx,x1,y1,x2,y2,color,sw){
+  const dpr=window.devicePixelRatio;const angle=Math.atan2(y2-y1,x2-x1);const hs=Math.max(sw*3,12*dpr);
+  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=sw;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(angle-Math.PI/6),y2-hs*Math.sin(angle-Math.PI/6));ctx.lineTo(x2-hs*Math.cos(angle+Math.PI/6),y2-hs*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill();
+}
+function placeTextInput(e){
+  finishTextInput();const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();
+  const overlay=document.getElementById('txt-overlay');overlay.style.pointerEvents='all';
+  const inp=document.createElement('textarea');inp.className='ov-el';
+  inp.style.cssText=`left:${e.clientX-r.left}px;top:${e.clientY-r.top}px;font-size:${S.fontSize}px;color:${S.color};background:transparent;border:1.5px dashed var(--acc);outline:none;resize:both;overflow:hidden;min-width:80px;min-height:24px;padding:3px 5px;position:absolute`;
+  overlay.appendChild(inp);inp.focus();S._activeTextInput={el:inp,cx:e.clientX-r.left,cy:e.clientY-r.top};
+  inp.addEventListener('blur',()=>finishTextInput());inp.addEventListener('keydown',e2=>{if(e2.key==='Escape')finishTextInput(true);});
+}
+function finishTextInput(cancel=false){
+  if(!S._activeTextInput)return;const{el,cx,cy}=S._activeTextInput;
+  if(!cancel&&el.value.trim()){
+    const dpr=window.devicePixelRatio;const annos=getAnnos(S.activeIdx,S.page);
+    annos.push({type:'text',x:cx*dpr,y:cy*dpr,w:200*dpr,h:50*dpr,text:el.value,color:S.color,strokeSize:1,opacity:1,fontSize:S.fontSize});
+    redrawAnnos();renderAnnoList();
+  }
+  el.remove();S._activeTextInput=null;document.getElementById('txt-overlay').style.pointerEvents='none';
+}
+function undoAnno(){const a=getAnnos(S.activeIdx,S.page);if(a.length>0){a.pop();redrawAnnos();renderAnnoList();}}
+function clearPageAnnos(){if(!confirm('Ryd side '+S.page+'?'))return;getAnnos(S.activeIdx,S.page).splice(0);redrawAnnos();renderAnnoList();}
+function renderAnnoList(){
+  const list=document.getElementById('anno-list');const annos=getAnnos(S.activeIdx,S.page);
+  if(!annos.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px">Ingen annotationer</div>';return;}
+  const labels={highlight:'Fremhæv',redact:'Overstreg',pen:'Frihånd',text:'Tekst',rect:'Kasse',circle:'Cirkel',line:'Linje',arrow:'Pil',image:'Billede'};
+  list.innerHTML='';
+  annos.forEach((a,i)=>{
+    const el=document.createElement('div');el.className='anno-item';
+    el.innerHTML=`<span class="at">${labels[a.type]||a.type}</span><span class="al">${a.text?escH(a.text.substring(0,25)):''}</span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${a.color||'#888'};flex-shrink:0"></span><span class="adel" onclick="deleteAnno(${i})">✕</span>`;
+    list.appendChild(el);
+  });
+}
+function deleteAnno(i){getAnnos(S.activeIdx,S.page).splice(i,1);redrawAnnos();renderAnnoList();}
+
+// ================================================================
+// INSERT IMAGE
+// ================================================================
+function triggerImgInsert(){document.getElementById('img-input').click();}
+document.getElementById('img-input').addEventListener('change',e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();img.onload=()=>{
+      const av=document.getElementById('anno-canvas');const dpr=window.devicePixelRatio;
+      const iw=Math.min(img.width,av.width/2),ih=img.height*(iw/img.width);
+      const x=(av.width-iw)/2,y=(av.height-ih)/2;
+      const annos=getAnnos(S.activeIdx,S.page);
+      annos.push({type:'image',x,y,w:iw,h:ih,_img:img,_src:ev.target.result,color:'transparent',strokeSize:0,opacity:1});
+      redrawAnnos();renderAnnoList();toast('Billede indsat ✓','ok');
+    };img.src=ev.target.result;
+  };reader.readAsDataURL(file);e.target.value='';
+});
+
+async function insertBlankPage(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+  const cur=f.pdfLibDoc.getPage(Math.min(S.page-1,f.pdfLibDoc.getPageCount()-1));
+  const{width,height}=cur.getSize();f.pdfLibDoc.insertPage(S.page,{width,height});
+  const bytes=await f.pdfLibDoc.save();f.buf=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  f.pdfJsDoc=null;f.pdfLibDoc=null;await openFile(S.activeIdx);toast('Blank side indsat ✓','ok');
+}
+async function copyPageText(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const page=await f.pdfJsDoc.getPage(S.page);const content=await page.getTextContent();
+  const text=content.items.map(i=>i.str).join(' ');
+  navigator.clipboard.writeText(text).then(()=>toast('Tekst kopieret ✓','ok'));
+}
+async function compressPDF(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const before=f.buf.byteLength;
+  const doc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+  const bytes=await doc.save({useObjectStreams:true,addDefaultPage:false,objectsPerTick:50});
+  const after=bytes.length;
+  f.buf=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+  f.pdfJsDoc=null;f.pdfLibDoc=null;
+  const pct=Math.round((1-after/before)*100);
+  toast(`Komprimeret: ${fmtBytes(before)} → ${fmtBytes(after)} (${pct>=0?'-'+pct:'+'+(pct*-1)}%) ✓`,'ok');
+  await openFile(S.activeIdx);
+}
+function fmtBytes(b){if(b<1024)return b+'B';if(b<1048576)return Math.round(b/1024)+'KB';return(b/1048576).toFixed(1)+'MB';}
+
+// ================================================================
+// INLINE TEXT EDITOR
+// ================================================================
+function refreshTextOverlay(){
+  const overlay=document.getElementById('txt-overlay');overlay.innerHTML='';
+  if(!S._inlineEditMode||S.activeIdx<0){overlay.style.pointerEvents='none';return;}
+  overlay.style.pointerEvents='all';
+  const edits=getTextEdits(S.activeIdx,S.page);
+  edits.forEach((ed,i)=>{
+    if(ed.deleted)return;
+    const el=document.createElement('div');
+    el.className='ov-el ov-txt';el.contentEditable='true';
+    el.dataset.type='text';el.dataset.idx=i;
+    el.textContent=ed.newText||ed.origText||'';
+    const vfs=Math.max(6,ed.vfs||12);
+    el.style.cssText=`left:${ed.vx||0}px;top:${(ed.vy||0)-vfs}px;min-width:${Math.max(ed.vw||20,20)}px;height:${vfs*1.4}px;font-size:${vfs}px;font-family:${ed.fontFamily||'sans-serif'};color:transparent;caret-color:var(--acc);background:transparent;border:none;outline:none;line-height:1.1;white-space:pre;padding:0;overflow:visible;`;
+    el.addEventListener('focus',()=>{el.style.color='rgba(0,0,0,0.9)';el.style.background='rgba(255,255,255,0.9)';el.style.outline='2px solid var(--acc)';el.style.borderRadius='2px';selectOvEl(el);});
+    el.addEventListener('blur',()=>{ed.newText=el.textContent;el.style.color='transparent';el.style.background='transparent';el.style.outline='none';syncTePanel(i,el.textContent);});
+    el.addEventListener('keydown',e=>{if(e.key==='Escape')el.blur();});
+    el.addEventListener('mousedown',e=>{if(document.activeElement===el)return;e.preventDefault();selectOvEl(el);startOvDrag(e,el,'text',i,ed);});
+    overlay.appendChild(el);
+  });
+  // Image overlays
+  getImgEls(S.activeIdx,S.page).forEach((im,i)=>{
+    if(im.deleted||!im.src)return;
+    const el=document.createElement('img');el.className='ov-el';el.src=im.src;
+    el.dataset.type='image';el.dataset.idx=i;
+    el.style.cssText=`left:${im.vx||0}px;top:${im.vy||0}px;width:${im.vw||80}px;height:${im.vh||80}px;cursor:move;`;
+    el.addEventListener('mousedown',e=>{e.preventDefault();selectOvEl(el);startOvDrag(e,el,'image',i,im);});
+    overlay.appendChild(el);
+  });
+}
+function selectOvEl(el){
+  document.querySelectorAll('.ov-el').forEach(e=>e.classList.remove('selected'));
+  el.classList.add('selected');S._selEl=el;
+}
+function startOvDrag(e,el,type,idx,data){
+  S._drag={el,sx:e.clientX,sy:e.clientY,sl:parseFloat(el.style.left)||0,st:parseFloat(el.style.top)||0,type,idx,data};
+}
+function deleteSelectedEl(){
+  if(!S._selEl)return;
+  const type=S._selEl.dataset.type,idx=parseInt(S._selEl.dataset.idx);
+  if(type==='text')getTextEdits(S.activeIdx,S.page)[idx].deleted=true;
+  else if(type==='image')getImgEls(S.activeIdx,S.page)[idx].deleted=true;
+  S._selEl=null;refreshTextOverlay();toast('Slettet');
+}
+function syncTePanel(idx,val){
+  const rows=document.querySelectorAll('#te-blocks .te-b');if(rows[idx])rows[idx].querySelector('textarea').value=val;
+}
+function updateTextEdit(fi,pg,gi,val){
+  const edits=getTextEdits(fi,pg);if(edits[gi])edits[gi].newText=val;
+  const spans=document.querySelectorAll('#txt-overlay .ov-el[data-type="text"]');if(spans[gi])spans[gi].textContent=val;
+}
+function toggleInlineEdit(){
+  S._inlineEditMode=!S._inlineEditMode;
+  const btn=document.getElementById('btn-inline-toggle');if(btn)btn.style.background=S._inlineEditMode?'rgba(59,130,246,.2)':'';
+  refreshTextOverlay();toast(S._inlineEditMode?'Klik på tekst i PDF for at redigere':'Inline redigering slukket');
+}
+
+async function extractText(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const wrap=document.getElementById('te-blocks');wrap.innerHTML='';
+  try{
+    const page=await f.pdfJsDoc.getPage(S.page);
+    const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+    const totalRot=(S.rotation+pageRot)%360;
+    const vp=page.getViewport({scale:S.zoom,rotation:totalRot});
+    const content=await page.getTextContent({includeMarkedContent:false});
+    const items=content.items.filter(i=>i.str&&i.str.trim().length>0);
+    if(!items.length){wrap.innerHTML='<div class="te-empty">Ingen tekst — prøv OCR</div>';return;}
+    const edits=getTextEdits(S.activeIdx,S.page);edits.length=0;
+    items.forEach((item,i)=>{
+      const tx=item.transform;const fontSize=Math.max(6,Math.sqrt(tx[0]*tx[0]+tx[1]*tx[1]));
+      const vPt=vp.convertToViewportPoint(tx[4],tx[5]);const vfs=fontSize*S.zoom;const vw=Math.max((item.width||0)*S.zoom,8);
+      edits.push({origText:item.str,newText:item.str,pdfX:tx[4],pdfY:tx[5],fontSize,fontFamily:item.fontName||'sans-serif',vx:vPt[0],vy:vPt[1],vh:vfs*1.2,vw,vfs:Math.max(vfs,6),deleted:false,newPdfX:null,newPdfY:null});
+      const el=document.createElement('div');el.className='te-b';
+      el.innerHTML=`<div class="te-bh"><span>${Math.round(vfs)}pt</span>
+        <button class="btn bXs bGh" onclick="getTextEdits(${S.activeIdx},${S.page})[${i}].newText=getTextEdits(${S.activeIdx},${S.page})[${i}].origText;this.closest('.te-b').querySelector('textarea').value=getTextEdits(${S.activeIdx},${S.page})[${i}].origText;refreshTextOverlay()" title="Nulstil">↺</button>
+        <button class="btn bXs bDng" onclick="getTextEdits(${S.activeIdx},${S.page})[${i}].deleted=true;this.closest('.te-b').style.opacity='.3';refreshTextOverlay()" title="Slet">✕</button>
+      </div>
+      <textarea class="te-ta" rows="1" oninput="updateTextEdit(${S.activeIdx},${S.page},${i},this.value)">${escH(item.str)}</textarea>`;
+      wrap.appendChild(el);
+    });
+    S._inlineEditMode=true;refreshTextOverlay();
+    toast(edits.length+' tekstfelter indlæst — klik i PDF for at redigere','ok');switchRT('te');
+  }catch(err){toast('Fejl: '+err.message,true);}
+}
+
+async function loadFormFields(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const wrap=document.getElementById('te-blocks');wrap.innerHTML='';
+  try{
+    if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+    const form=f.pdfLibDoc.getForm();const fields=form.getFields();
+    if(!fields.length){wrap.innerHTML='<div class="te-empty">Ingen formularfelter i denne PDF</div>';return;}
+    if(!S._formFields[S.activeIdx])S._formFields[S.activeIdx]={};
+    wrap.innerHTML=`<div style="font-size:11px;color:var(--grn);padding:6px 0">${fields.length} formularfelter fundet</div>`;
+    fields.forEach((field,i)=>{
+      const name=field.getName();let val='';
+      try{if(field.constructor.name==='PDFTextField')val=field.getText()||'';}catch{}
+      S._formFields[S.activeIdx][name]=val;
+      const el=document.createElement('div');el.className='te-b';
+      el.innerHTML=`<div class="te-bh"><span>${escH(name)}</span></div>
+        <textarea class="te-ta" rows="1" placeholder="${escH(name)}"
+          oninput="if(!S._formFields[${S.activeIdx}])S._formFields[${S.activeIdx}]={};S._formFields[${S.activeIdx}]['${name.replace(/'/g,"\\'")}'] = this.value"
+        >${escH(val)}</textarea>`;
+      wrap.appendChild(el);
+    });
+    switchRT('te');toast(fields.length+' felter indlæst — rediger og download','ok');
+  }catch(err){wrap.innerHTML='<div class="te-empty">Ingen formularfelter fundet</div>';}
+}
+
+// ================================================================
+// SIGNATURE
+// ================================================================
+function openSignaturePanel(){switchRT('sig');}
+function setSigTab(tab){
+  S._sigTab=tab;
+  ['draw','type','upload'].forEach(t=>{
+    const panel=document.getElementById('sig-'+t+'-panel');const btn=document.getElementById('sig-tab-'+t);
+    if(panel)panel.style.display=t===tab?'block':'none';
+    if(btn){btn.style.background=t===tab?'var(--acc)':'transparent';btn.style.color=t===tab?'#fff':'var(--t2)';}
+  });
+  if(tab==='draw')initSigCanvas();
+}
+
+let _sigCtx=null;
+function initSigCanvas(){
+  const cv=document.getElementById('sig-canvas');if(!cv)return;
+  cv.width=cv.offsetWidth||260;cv.height=100;
+  _sigCtx=cv.getContext('2d');_sigCtx.strokeStyle='#000';_sigCtx.lineWidth=2;_sigCtx.lineCap='round';
+  cv.onmousedown=e=>{S._sigDrawing=true;const r=cv.getBoundingClientRect();S._sigLastX=e.clientX-r.left;S._sigLastY=e.clientY-r.top;};
+  cv.onmousemove=e=>{if(!S._sigDrawing)return;const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;_sigCtx.strokeStyle=document.getElementById('sig-color').value;_sigCtx.beginPath();_sigCtx.moveTo(S._sigLastX,S._sigLastY);_sigCtx.lineTo(x,y);_sigCtx.stroke();S._sigLastX=x;S._sigLastY=y;cv.classList.add('has-sig');};
+  cv.onmouseup=cv.onmouseleave=()=>{S._sigDrawing=false;};
+  // Touch support
+  cv.ontouchstart=e=>{e.preventDefault();const t=e.touches[0];const r=cv.getBoundingClientRect();S._sigDrawing=true;S._sigLastX=t.clientX-r.left;S._sigLastY=t.clientY-r.top;};
+  cv.ontouchmove=e=>{e.preventDefault();if(!S._sigDrawing)return;const t=e.touches[0];const r=cv.getBoundingClientRect();const x=t.clientX-r.left,y=t.clientY-r.top;_sigCtx.strokeStyle=document.getElementById('sig-color').value;_sigCtx.beginPath();_sigCtx.moveTo(S._sigLastX,S._sigLastY);_sigCtx.lineTo(x,y);_sigCtx.stroke();S._sigLastX=x;S._sigLastY=y;cv.classList.add('has-sig');};
+  cv.ontouchend=()=>{S._sigDrawing=false;};
+}
+function clearSig(){const cv=document.getElementById('sig-canvas');_sigCtx.clearRect(0,0,cv.width,cv.height);cv.classList.remove('has-sig');}
+
+function renderTypedSig(text){
+  const cv=document.getElementById('sig-type-canvas');const ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(!text)return;
+  const font=document.getElementById('sig-font').value;
+  ctx.font=`32px ${font}`;ctx.fillStyle=document.getElementById('sig-color')?document.getElementById('sig-color').value:'#000';
+  ctx.textBaseline='middle';ctx.fillText(text,10,cv.height/2);
+}
+
+function loadSigImage(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();img.onload=()=>{
+      const cv=document.getElementById('sig-upload-canvas');cv.style.display='block';
+      const ctx=cv.getContext('2d');ctx.clearRect(0,0,cv.width,cv.height);
+      const scale=Math.min(cv.width/img.width,cv.height/img.height);
+      ctx.drawImage(img,0,0,img.width*scale,img.height*scale);
+    };img.src=ev.target.result;
+  };reader.readAsDataURL(file);
+}
+
+function getSigCanvas(){
+  const tab=S._sigTab;
+  if(tab==='draw')return document.getElementById('sig-canvas');
+  if(tab==='type')return document.getElementById('sig-type-canvas');
+  if(tab==='upload')return document.getElementById('sig-upload-canvas');
+}
+
+async function placeSigOnPage(){
+  if(S.activeIdx<0){toast('Åbn en PDF først',true);return;}
+  const sigCv=getSigCanvas();if(!sigCv){toast('Opret signatur først',true);return;}
+  const sigData=sigCv.toDataURL('image/png');
+  const w=parseInt(document.getElementById('sig-w').value)||160;
+  const h=Math.round(sigCv.height*(w/sigCv.width));
+  // Place in center of page for now — user can drag
+  const av=document.getElementById('anno-canvas');
+  const x=(av.width/window.devicePixelRatio-w)/2;
+  const y=(av.height/window.devicePixelRatio-h)/2;
+  const img=new Image();
+  img.onload=()=>{
+    // Add as annotation (will be baked on download)
+    const dpr=window.devicePixelRatio;
+    const annos=getAnnos(S.activeIdx,S.page);
+    annos.push({type:'image',x:x*dpr,y:y*dpr,w:w*dpr,h:h*dpr,_img:img,_src:sigData,color:'transparent',strokeSize:0,opacity:1,isSig:true});
+    redrawAnnos();renderAnnoList();
+    toast('Signatur placeret — træk den til den rigtige position','ok');
+    switchRT('anno');
+  };img.src=sigData;
+}
+
+// ================================================================
+// OCR (direct Vision API call)
+// ================================================================
+async function callVisionAPI(base64Image, features=['TEXT_DETECTION','DOCUMENT_TEXT_DETECTION']){
+  if(!S.apiKey){toast('Ingen OCR API-nøgle — gå til Dokument ▾ → OCR API-nøgle',true);return null;}
+  const resp=await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${S.apiKey}`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({requests:[{image:{content:base64Image},features:features.map(f=>({type:f,maxResults:1})),imageContext:{languageHints:['da','en','ja']}}]})
+  });
+  if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||'HTTP '+resp.status);}
+  return await resp.json();
+}
+
+async function renderPageForOCR(pdfJsDoc,pageNum,scale,fileObj){
+  const page=await pdfJsDoc.getPage(pageNum);
+  const pageRot=(fileObj&&fileObj.pageRotations&&fileObj.pageRotations[pageNum])||0;
+  const viewRot=(fileObj&&fileObj._viewRotation)||0;
+  const totalRot=(pageRot+viewRot)%360;
+  const vp=page.getViewport({scale,rotation:totalRot});
+  const cv=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  return cv;
+}
+
+async function runOCR(){
+  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  const f=S.files[S.activeIdx];
+  const btns=['btn-teocr'].map(id=>document.getElementById(id)).filter(Boolean);
+  btns.forEach(b=>{b.disabled=true;b.innerHTML='<span class="spin"></span>';});
+  try{
+    const off=await renderPageForOCR(f.pdfJsDoc,S.page,2.5,f);
+    const b64=off.toDataURL('image/png').split(',')[1];
+    const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);
+    if(!json)return;
+    const result=json.responses[0];
+    const text=result.fullTextAnnotation?.text||result.textAnnotations?.[0]?.description||'(ingen tekst)';
+    switchRT('te');const wrap=document.getElementById('te-blocks');
+    const block=document.createElement('div');block.className='te-b';
+    block.innerHTML=`<div class="te-bh"><span>OCR — side ${S.page}</span><button class="btn bXs bGh" onclick="navigator.clipboard.writeText(this.closest('.te-b').querySelector('textarea').value).then(()=>toast('Kopieret ✓','ok'))">📋</button></div><textarea class="te-ta" rows="10">${escH(text)}</textarea>`;
+    if(wrap.querySelector('.te-empty'))wrap.innerHTML='';wrap.insertBefore(block,wrap.firstChild);
+    toast('OCR færdig ✓','ok');
+  }catch(err){toast('OCR fejl: '+err.message,true);}
+  btns.forEach(b=>{b.disabled=false;b.innerHTML='🔍 OCR';});
+}
+
+async function runOCRSearch(){
+  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  const f=S.files[S.activeIdx];const term=document.getElementById('ocr-search-inp').value.trim();
+  if(!term){toast('Angiv søgeord',true);return;}
+  const results=document.getElementById('ocr-search-results');results.innerHTML='<div style="color:var(--t3);font-size:11px">Søger…</div>';
+  try{
+    const ocrScale=3.0;const off=await renderPageForOCR(f.pdfJsDoc,S.page,ocrScale,f);
+    const b64=off.toDataURL('image/png').split(',')[1];
+    const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);
+    if(!json)return;
+    const resp=json.responses[0];
+    const ann=resp.fullTextAnnotation;if(!ann){results.innerHTML='<div class="ocr-ri ocr-fail">Ingen tekst fundet</div>';return;}
+    const termLow=term.toLowerCase();const boxes=[];
+    (ann.pages||[]).forEach(page=>(page.blocks||[]).forEach(block=>(block.paragraphs||[]).forEach(para=>(para.words||[]).forEach(word=>{
+      const wordText=(word.symbols||[]).map(s=>s.text).join('').toLowerCase();
+      if(wordText.includes(termLow)){
+        const verts=word.boundingBox.vertices;
+        boxes.push({x:verts[0].x||0,y:verts[0].y||0,w:(verts[1].x||0)-(verts[0].x||0),h:(verts[2].y||0)-(verts[0].y||0)});
+      }
+    }))));
+    if(!boxes.length){results.innerHTML='<div class="ocr-ri ocr-fail">⚠ Ikke fundet på side '+S.page+'</div>';return;}
+    const annos=getAnnos(S.activeIdx,S.page);const dpr=window.devicePixelRatio;const sr=(S.zoom*dpr)/ocrScale;
+    boxes.forEach(box=>annos.push({type:'redact',x:box.x*sr,y:box.y*sr,w:Math.max(box.w*sr,10),h:Math.max(box.h*sr,10),color:S.redactColor,strokeSize:1,opacity:1}));
+    redrawAnnos();renderAnnoList();f._hasOcr=true;renderFileList();
+    const el=document.createElement('div');el.className='ocr-ri ocr-ok';el.textContent='✓ '+boxes.length+' fund på side '+S.page;results.appendChild(el);
+    results.firstChild.remove(); // remove "Søger…"
+  }catch(err){results.innerHTML=`<div class="ocr-ri ocr-fail">Fejl: ${escH(err.message)}</div>`;}
+}
+
+async function runBulkOCRSearch(){
+  const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
+  if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  const globalTerm=document.getElementById('ocr-bulk-term').value.trim();const useBm=document.getElementById('ocr-use-bm').checked;
+  const results=document.getElementById('ocr-bulk-results');results.innerHTML='';
+  showProgress('OCR Overstrekning',0,files.length);
+  for(let fi=0;fi<files.length;fi++){
+    if(S._cancelProgress)break;const f=files[fi];const fileIdx=S.files.indexOf(f);
+    const term=useBm&&f._existingBms.length>0?f._existingBms[0].title:globalTerm;
+    if(!term){updateProgress(fi+1,files.length,f.name+': spring over');continue;}
+    updateProgress(fi+1,files.length,f.name);
+    try{
+      if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+      let found=0;
+      for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
+        if(S._cancelProgress)break;
+        const off=await renderPageForOCR(f.pdfJsDoc,pg,2.5,f);
+        const b64=off.toDataURL('image/png').split(',')[1];
+        const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);if(!json)continue;
+        const ann=json.responses[0].fullTextAnnotation;if(!ann)continue;
+        const termLow=term.toLowerCase();
+        (ann.pages||[]).forEach(page=>(page.blocks||[]).forEach(block=>(block.paragraphs||[]).forEach(para=>(para.words||[]).forEach(word=>{
+          const wordText=(word.symbols||[]).map(s=>s.text).join('').toLowerCase();
+          if(wordText.includes(termLow)){
+            const verts=word.boundingBox.vertices;
+            getAnnos(fileIdx,pg).push({type:'redact',x:verts[0].x||0,y:verts[0].y||0,w:(verts[1].x||0)-(verts[0].x||0),h:(verts[2].y||0)-(verts[0].y||0),color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:2.5});
+            found++;
+          }
+        }))));
+      }
+      f._hasOcr=found>0;
+      const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';results.appendChild(item);
+    }catch(err){const item=document.createElement('div');item.className='ocr-ri ocr-fail';item.textContent='✕ '+f.name+': '+err.message;results.appendChild(item);}
+  }
+  hideProgress();renderFileList();if(S.activeIdx>=0)renderAnnoList();toast('OCR søgning færdig ✓','ok');
+}
+
+async function autoRotatePage(){
+  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  const f=S.files[S.activeIdx];toast('Analyserer tekstretning…');
+  try{
+    const page=await f.pdfJsDoc.getPage(S.page);const vp=page.getViewport({scale:1.5,rotation:0});
+    const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
+    await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
+    const json=await callVisionAPI(off.toDataURL('image/png').split(',')[1],['DOCUMENT_TEXT_DETECTION']);if(!json)return;
+    const ann=json.responses[0].fullTextAnnotation;
+    if(!ann){toast('Ingen tekst fundet til rotation-detektion');return;}
+    let rotation=0;
+    try{
+      const pages=ann.pages;if(pages&&pages[0]&&pages[0].blocks&&pages[0].blocks[0]){
+        const verts=pages[0].blocks[0].boundingBox.vertices;const dx=verts[1].x-verts[0].x;const dy=verts[1].y-verts[0].y;
+        const angle=Math.atan2(dy,dx)*180/Math.PI;
+        if(Math.abs(angle)<30)rotation=0;else if(angle>30&&angle<120)rotation=90;else if(Math.abs(angle)>120)rotation=180;else rotation=270;
+      }
+    }catch{}
+    if(!rotation){toast('Side allerede korrekt orienteret ✓','ok');}
+    else{
+      if(!f.pageRotations)f.pageRotations={};f.pageRotations[S.page]=(f.pageRotations[S.page]||0)+rotation;
+      f._hasRotation=true;await renderPage();renderFileList();toast(`Roteret ${rotation}° ✓`,'ok');
+    }
+  }catch(err){toast('Fejl: '+err.message,true);}
+}
+
+async function autoRotateAll(){
+  const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
+  if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  showProgress('Auto-Roter OCR',0,files.length);
+  for(let fi=0;fi<files.length;fi++){
+    if(S._cancelProgress)break;const f=files[fi];updateProgress(fi+1,files.length,f.name);
+    try{
+      if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+      if(!f.pageRotations)f.pageRotations={};
+      for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
+        if(f.pageRotations[pg])continue;
+        const page=await f.pdfJsDoc.getPage(pg);const vp=page.getViewport({scale:0.8,rotation:0});
+        const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
+        await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
+        const json=await callVisionAPI(off.toDataURL('image/jpeg',0.7).split(',')[1],['DOCUMENT_TEXT_DETECTION']);if(!json)continue;
+        const ann=json.responses[0].fullTextAnnotation;if(!ann)continue;
+        try{
+          const pages=ann.pages;if(pages&&pages[0]&&pages[0].blocks&&pages[0].blocks[0]){
+            const verts=pages[0].blocks[0].boundingBox.vertices;const dx=verts[1].x-verts[0].x;const dy=verts[1].y-verts[0].y;
+            const angle=Math.atan2(dy,dx)*180/Math.PI;let rotation=0;
+            if(Math.abs(angle)<30)rotation=0;else if(angle>30&&angle<120)rotation=90;else if(Math.abs(angle)>120)rotation=180;else rotation=270;
+            if(rotation){f.pageRotations[pg]=rotation;f._hasRotation=true;}
+          }
+        }catch{}
+      }
+    }catch(e){}
+  }
+  hideProgress();renderFileList();if(S.activeIdx>=0)await renderPage();toast('Auto-Roter færdig ✓','ok');
+}
+
+// ================================================================
+// NAV + ZOOM + ROTATE
+// ================================================================
+function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();renderPage();if(S._pageMgrOpen)highlightThumb(n);}
+function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();renderPage();}
+function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.totalPages===0;pi.max=S.totalPages;document.getElementById('tb-prev').disabled=S.page<=1;document.getElementById('tb-next').disabled=S.page>=S.totalPages;}
+function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
+function zoomFit(){if(S.activeIdx<0)return;S.files[S.activeIdx].pdfJsDoc.getPage(S.page).then(pg=>{const vp=pg.getViewport({scale:1});S.zoom=(document.getElementById('cv-container').clientWidth-28)/vp.width;renderPage();});}
+function rotateSingle(){S.rotation=(S.rotation+90)%360;if(S.activeIdx>=0){S.files[S.activeIdx]._viewRotation=S.rotation;S.files[S.activeIdx]._hasRotation=true;renderFileList();}renderPage();toast('Roteret til '+S.rotation+'°');}
+
+// ================================================================
+// PAGE MANAGER
+// ================================================================
+function togglePageMgr(){S._pageMgrOpen=!S._pageMgrOpen;document.getElementById('page-mgr').classList.toggle('hidden',!S._pageMgrOpen);if(S._pageMgrOpen&&S.activeIdx>=0)renderPageThumbs();}
+async function renderPageThumbs(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const list=document.getElementById('pt-list');list.innerHTML='';S._selPages.clear();
+  for(let i=1;i<=S.totalPages;i++){
+    const th=document.createElement('div');th.className='pt'+(i===S.page?' active':'');th.dataset.pg=i;
+    const pg=await f.pdfJsDoc.getPage(i);const vp=pg.getViewport({scale:.25});
+    const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;cv.style.width='100%';
+    await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+    const lbl=document.createElement('div');lbl.className='pt-lbl';lbl.textContent=i;
+    th.appendChild(cv);th.appendChild(lbl);
+    th.addEventListener('click',()=>{if(S._selPages.has(i)){S._selPages.delete(i);th.classList.remove('sel');}else{S._selPages.add(i);th.classList.add('sel');S.page=i;updateNavUI();renderPage();}});
+    list.appendChild(th);
+  }
+  if(window._pgSort)window._pgSort.destroy();
+  window._pgSort=Sortable.create(list,{animation:120,onEnd:()=>toast('Rækkefølge ændret — gemmes ved download')});
+}
+function highlightThumb(pg){document.querySelectorAll('.pt').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.pg)===pg));}
+function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}if(!confirm('Slet?'))return;S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
+function rotSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}const f=S.files[S.activeIdx];S._selPages.forEach(p=>{if(!f.pageRotations)f.pageRotations={};f.pageRotations[p]=(f.pageRotations[p]||0+90)%360;});f._hasRotation=true;renderFileList();renderPage();}
+function extractSelPages(){if(!S._selPages.size){toast('Vælg sider i sidepanelet',true);return;}const pages=[...S._selPages].sort((a,b)=>a-b).join(', ');document.getElementById('extract-pages').value=pages;document.getElementById('extract-name').value=S.files[S.activeIdx].name.replace('.pdf','_udtræk.pdf');openM('m-extract');}
+
+// ================================================================
+// COMPARE
+// ================================================================
+function toggleCompare(){
+  S._compareOpen=!S._compareOpen;
+  document.getElementById('cv-container').style.display=S._compareOpen?'none':'flex';
+  document.getElementById('compare-view').classList.toggle('active',S._compareOpen);
+  document.getElementById('btn-compare').classList.toggle('active',S._compareOpen);
+  if(S._compareOpen)populateCompareSelects();
+}
+function populateCompareSelects(){
+  ['cmp-left-sel','cmp-right-sel'].forEach(id=>{
+    const sel=document.getElementById(id);sel.innerHTML='';
+    S.files.forEach((f,i)=>{const o=document.createElement('option');o.value=i;o.textContent=f.name.substring(0,28);sel.appendChild(o);});
+    if(S.files.length>0)sel.value=id.includes('right')&&S.files.length>1?1:0;
+  });renderCompare();
+}
+async function renderCompare(){
+  await renderCmpCanvas('cmp-cv-left','cmp-left-sel','cmp-left-pg',S._cmpLeft);
+  await renderCmpCanvas('cmp-cv-right','cmp-right-sel','cmp-right-pg',S._cmpRight);
+}
+async function renderCmpCanvas(cvId,selId,pgId,state){
+  const sel=document.getElementById(selId);if(!sel||sel.value==='')return;
+  const fi=parseInt(sel.value);const f=S.files[fi];if(!f)return;
+  if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+  state.fileIdx=fi;state.page=Math.min(state.page,f.pdfJsDoc.numPages);
+  document.getElementById(pgId).textContent=state.page+'/'+f.pdfJsDoc.numPages;
+  const page=await f.pdfJsDoc.getPage(state.page);const vp=page.getViewport({scale:0.9});
+  const cv=document.getElementById(cvId);cv.width=vp.width;cv.height=vp.height;cv.style.width=(vp.width/window.devicePixelRatio)+'px';cv.style.height=(vp.height/window.devicePixelRatio)+'px';
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+}
+function cmpChangePage(d,side){
+  const state=side==='left'?S._cmpLeft:S._cmpRight;const sel=document.getElementById(side==='left'?'cmp-left-sel':'cmp-right-sel');
+  if(!sel||sel.value==='')return;const f=S.files[parseInt(sel.value)];if(!f||!f.pdfJsDoc)return;
+  state.page=Math.max(1,Math.min(f.pdfJsDoc.numPages,state.page+d));
+  renderCmpCanvas(side==='left'?'cmp-cv-left':'cmp-cv-right',side==='left'?'cmp-left-sel':'cmp-right-sel',side==='left'?'cmp-left-pg':'cmp-right-pg',state);
+}
+
+// ================================================================
+// BOOKMARKS
+// ================================================================
+async function loadBms(f){
+  S.bms=[];S.selBm=-1;disableBmBtns();
+  if(f._existingBms&&f._existingBms.length>0){S.bms=f._existingBms.map(b=>({...b}));}
+  else{try{const toc=await f.pdfJsDoc.getOutline();if(toc&&toc.length)await parseToc(toc,f.pdfJsDoc,1);}catch(e){}f._existingBms=S.bms.map(b=>({...b}));}
+  if(S.bms.length>0)f._hasBm=true;
+  renderBmList();document.getElementById('bm-count').textContent=S.bms.length?S.bms.length+' bogmærker':'Ingen';
+}
+async function parseToc(items,doc,level){
+  for(const item of items){
+    let pg=1;try{if(item.dest){const d=typeof item.dest==='string'?await doc.getDestination(item.dest):item.dest;if(d&&d[0])pg=(await doc.getPageIndex(d[0]))+1;}}catch{}
+    S.bms.push({level,title:item.title||'(uden navn)',page:pg,disabled:false});
+    if(item.items&&item.items.length)await parseToc(item.items,doc,level+1);
+  }
+}
+function renderBmList(){
+  const list=document.getElementById('bm-list');list.innerHTML='';
+  if(!S.bms.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px">Ingen bogmærker</div>';return;}
+  S.bms.forEach((bm,i)=>{
+    const el=document.createElement('div');el.className='bm-item'+(bm.disabled?' dis':'')+(i===S.selBm?' sel':'');
+    el.style.paddingLeft=(7+(bm.level-1)*18)+'px';
+    const dc=bm.level===1?'var(--grn)':bm.level===2?'var(--acc)':'var(--pur)';
+    const ds=bm.level===1?'7px':'5px';const ts=bm.level>1?'color:var(--t2)':'color:var(--t1);font-weight:600';
+    el.innerHTML=`<span class="bm-drag">⠿</span><span class="bm-dot" style="background:${dc};width:${ds};height:${ds}"></span><span class="bm-lbl" style="${ts}">${escH(bm.title)}</span><span class="bm-pg">s.${bm.page}</span>`;
+    el.addEventListener('click',()=>{S.selBm=i;renderBmList();enableBmBtns();if(bm.page>=1&&bm.page<=S.totalPages){S.page=bm.page;updateNavUI();renderPage();}});
+    list.appendChild(el);
+  });
+  if(window._bmSort)window._bmSort.destroy();
+  window._bmSort=Sortable.create(list,{handle:'.bm-drag',animation:100,onEnd(e){const m=S.bms.splice(e.oldIndex,1)[0];S.bms.splice(e.newIndex,0,m);S.selBm=e.newIndex;renderBmList();if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];}});
+}
+function enableBmBtns(){['btn-bme','btn-bmt','btn-bmd'].forEach(id=>document.getElementById(id).disabled=false);}
+function disableBmBtns(){['btn-bme','btn-bmt','btn-bmd'].forEach(id=>document.getElementById(id).disabled=true);}
+function addBm(){addBmForm();}
+function editBm(){if(S.selBm<0)return;const bm=S.bms[S.selBm];document.getElementById('bm-edit-label').textContent='Rediger bogmærke';document.getElementById('bm-edit-name').value=bm.title;document.getElementById('bm-edit-page').value=bm.page||1;document.getElementById('bm-edit-level').value=String(bm.level||1);document.getElementById('bm-edit-form').dataset.mode='edit';document.getElementById('bm-edit-form').style.display='flex';document.getElementById('bm-edit-name').focus();}
+function addBmForm(){document.getElementById('bm-edit-label').textContent='Tilføj bogmærke';document.getElementById('bm-edit-name').value='';document.getElementById('bm-edit-page').value=S.page||1;document.getElementById('bm-edit-level').value='1';document.getElementById('bm-edit-form').dataset.mode='add';document.getElementById('bm-edit-form').style.display='flex';document.getElementById('bm-edit-name').focus();}
+function commitBmEdit(){
+  const name=document.getElementById('bm-edit-name').value.trim();const page=parseInt(document.getElementById('bm-edit-page').value)||1;const level=parseInt(document.getElementById('bm-edit-level').value)||1;
+  if(!name){toast('Angiv navn',true);return;}
+  if(document.getElementById('bm-edit-form').dataset.mode==='edit'){if(S.selBm>=0){S.bms[S.selBm].title=name;S.bms[S.selBm].page=page;S.bms[S.selBm].level=level;}}
+  else{S.bms.push({level,title:name,page,disabled:false});}
+  if(S.activeIdx>=0){S.files[S.activeIdx]._existingBms=[...S.bms];S.files[S.activeIdx]._hasBm=true;}
+  renderBmList();renderFileList();if(S._mode==='list')renderListMode();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';cancelBmEdit();toast('Gemt ✓','ok');
+}
+function cancelBmEdit(){document.getElementById('bm-edit-form').style.display='none';}
+function toggleBm(){if(S.selBm<0)return;S.bms[S.selBm].disabled=!S.bms[S.selBm].disabled;if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];renderBmList();}
+function deleteBm(){if(S.selBm<0)return;if(!confirm('Slet?'))return;S.bms.splice(S.selBm,1);S.selBm=-1;disableBmBtns();if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}
+
+// ================================================================
+// FILENAME SUGGEST
+// ================================================================
+function showFnSuggest(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const sugs=buildSugs(f.name,S.bms.filter(b=>!b.disabled));
+  const chips=document.getElementById('fn-chips');chips.innerHTML='';
+  sugs.forEach(s=>{const c=document.createElement('div');c.className='fn-chip';c.innerHTML=`<span style="flex:1;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(s.label)}.pdf</span><span style="font-size:9px;color:var(--t3)">${escH(s.src)}</span>`;c.addEventListener('click',()=>{document.getElementById('fn-inp').value=s.label+'.pdf';});chips.appendChild(c);});
+  document.getElementById('fn-inp').value=(S.customFn||f.name.replace(/\.pdf$/i,''))+'.pdf';
+  document.getElementById('fn-box').classList.add('vis');switchRT('bm');
+}
+function confirmFn(){const v=document.getElementById('fn-inp').value.trim();if(!v)return;S.customFn=v.replace(/\.pdf$/i,'');closeFnBox();toast('Filnavn: '+v);}
+function closeFnBox(){document.getElementById('fn-box').classList.remove('vis');}
+function buildSugs(fn,bms){
+  const base=fn.replace(/\.pdf$/i,'');const sugs=[{label:san(base),src:'Nuværende'}];
+  const rm=base.match(/-\s*([\w][\w\-]*\d)\s*$/);if(rm)sugs.push({label:san(rm[1].trim()),src:'Ref.nr.'});
+  const an=[...base.matchAll(/\b(\d[\d\-]{3,})\b/g)];if(an.length){const l=an[an.length-1][1];if(!sugs.find(s=>s.label===san(l)))sugs.push({label:san(l),src:'Tal'});}
+  if(bms.length>0)sugs.push({label:san(bms[0].title),src:'1. BM'});
+  return sugs;
+}
+function extractRefNum(fn){const base=fn.replace(/\.pdf$/i,'');const m=base.match(/-\s*([\w][\w\-]*\d)\s*$/);if(m)return m[1].trim();const a=[...base.matchAll(/\b(\d[\d\-]{3,})\b/g)];if(a.length)return a[a.length-1][1];return san(base);}
+function san(s){return String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').replace(/\s+/g,' ').trim().substring(0,120);}
+
+// ================================================================
+// LIST MODE
+// ================================================================
+function renderListMode(){
+  const cont=document.getElementById('list-cont');const term=(document.getElementById('list-srch').value||'').toLowerCase();cont.innerHTML='';
+  if(!S.files.length){cont.innerHTML='<div style="padding:30px;text-align:center;color:var(--t3)">Tilføj PDF-filer med + PDF</div>';return;}
+  S.files.forEach((f,fi)=>{
+    if(term&&!f.name.toLowerCase().includes(term))return;
+    const grp=f.groupId!==null?S.groups.find(g=>g.id===f.groupId):null;
+    const pages=f.pdfJsDoc?f.pdfJsDoc.numPages+' sider':'?';
+    const bms=f._existingBms||[];
+    const row=document.createElement('div');row.className='lf-row'+(fi===S.activeIdx?' lf-active':'');
+    let bmHtml='';
+    if(!bms.length){
+      const sug=extractRefNum(f.name);
+      bmHtml=`<div class="lf-no-bm">Ingen bogmærker</div><div class="ocr-sug" onclick="applyBmSuggestion(${fi},'${escH(sug)}')">💡 Forslag: <b>${escH(sug)}</b> + Certificate</div>`;
+    } else {
+      bmHtml='<div>'+bms.map((bm,bi)=>{
+        const dc=bm.level===1?'var(--grn)':bm.level===2?'var(--acc)':'var(--pur)';
+        const ts=bm.level===1?'font-weight:600;color:var(--t1)':'color:var(--t2)';
+        const pl=bm.level>1?(bm.level-1)*16:0;
+        return `<div class="lbn ${bm.disabled?'dis':''}" data-fi="${fi}" data-bi="${bi}" style="padding-left:${pl}px">
+          <span class="lbn-dot" style="background:${dc};width:${bm.level===1?'8px':'6px'};height:${bm.level===1?'8px':'6px'}"></span>
+          <span class="lbn-txt" contenteditable="true" style="${ts}" onblur="saveLfBm(${fi},${bi},this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" onclick="event.stopPropagation()">${escH(bm.title)}</span>
+          <span class="lbn-pg">s.${bm.page}</span>
+          <label class="tog-m" onclick="event.stopPropagation()"><input type="checkbox" ${bm.disabled?'':'checked'} onchange="toggleLfBm(${fi},${bi},this.checked)"/><span class="tog-sl"></span></label>
+          <span class="lbn-del" onclick="delLfBm(${fi},${bi})">✕</span>
+        </div>`;
+      }).join('')+'</div>';
+    }
+    row.innerHTML=`<div class="lf-head"><div class="lf-cb ${f.bulkSel?'on':''}" onclick="toggleSel(event,${fi})">${f.bulkSel?'✓':''}</div>
+      <span style="font-size:13px;flex-shrink:0">📄</span>
+      <span class="lf-fname" title="${escH(f.name)}" onclick="openFile(${fi})">${escH(f.name)}</span>
+      <div class="fi-badges" style="flex-shrink:0">${fileBadges(f)}${grp?`<span class="grp-chip gc${grp.colorIdx}">${escH(grp.name.substring(0,10))}</span>`:''}</div>
+      <span style="font-size:10px;color:var(--t3);flex-shrink:0">${pages}</span>
+      <span class="lf-del2" onclick="removeFile(event,${fi})">🗑</span></div>
+      <div class="lf-bm-area">${bmHtml}
+        <div class="lf-add"><input type="text" placeholder="+ Sub-bogmærke…" onkeydown="if(event.key==='Enter')addLfBm(${fi},this)"/><button class="btn bXs bGh" onclick="addLfBm(${fi},this.previousElementSibling)">+</button></div>
+      </div>`;
+    cont.appendChild(row);
+  });
+}
+function applyBmSuggestion(fi,head){S.files[fi]._existingBms=[{level:1,title:head,page:1,disabled:false},{level:2,title:'Certificate',page:1,disabled:false}];S.files[fi]._hasBm=true;S.files[fi].bulkStatus='ok';if(S.activeIdx===fi){S.bms=[...S.files[fi]._existingBms];renderBmList();}renderFileList();renderListMode();toast('Bogmærke sat ✓','ok');}
+function saveLfBm(fi,bi,span){const v=span.textContent.trim();if(v&&S.files[fi]&&S.files[fi]._existingBms[bi]){S.files[fi]._existingBms[bi].title=v;if(S.activeIdx===fi){S.bms=S.files[fi]._existingBms.map(b=>({...b}));renderBmList();}}}
+function toggleLfBm(fi,bi,active){S.files[fi]._existingBms[bi].disabled=!active;if(S.activeIdx===fi){S.bms=[...S.files[fi]._existingBms];renderBmList();}}
+function delLfBm(fi,bi){S.files[fi]._existingBms.splice(bi,1);if(S.activeIdx===fi){S.bms=[...S.files[fi]._existingBms];renderBmList();}renderListMode();}
+function addLfBm(fi,inp){const v=inp.value.trim();if(!v)return;S.files[fi]._existingBms.push({level:2,title:v,page:1,disabled:false});inp.value='';if(S.activeIdx===fi){S.bms=[...S.files[fi]._existingBms];renderBmList();}renderListMode();toast('Tilføjet');}
+
+// ================================================================
+// GROUPS + MERGE + ANALYZE + BULK BM
+// ================================================================
+function openGroupModal(){document.getElementById('grp-info').textContent=S.files.filter(f=>f.bulkSel).length+' filer markeret';document.getElementById('grp-name').value='';S._gc=0;updGCUI();openM('m-group');}
+function selGC(i){S._gc=i;updGCUI();}
+function updGCUI(){document.querySelectorAll('#grp-colors>div').forEach((el,i)=>{el.style.borderColor=i===S._gc?'#fff':'transparent';});}
+function createGroup(){const name=document.getElementById('grp-name').value.trim();if(!name){toast('Angiv navn',true);return;}const gid=Date.now();const idxs=S.files.map((f,i)=>f.bulkSel?i:-1).filter(i=>i>=0);S.groups.push({id:gid,name,colorIdx:S._gc,fileIndices:idxs});idxs.forEach(i=>S.files[i].groupId=gid);closeM('m-group');renderFileList();if(S._mode==='list')renderListMode();toast('Gruppe oprettet','ok');}
+function openMergeModal(){const sel=S.files.filter(f=>f.bulkSel);document.getElementById('mrg-name').value='merged_output.pdf';document.getElementById('mrg-root').value='';document.getElementById('mrg-prev').innerHTML=sel.map((f,i)=>`${i+1}. ${escH(f.name)}`).join('<br/>');openM('m-merge');}
+async function doMerge(){
+  const sel=S.files.filter(f=>f.bulkSel);if(sel.length<2){toast('Min. 2 filer',true);return;}
+  const rootBm=document.getElementById('mrg-root').value.trim();const outName=document.getElementById('mrg-name').value.trim()||'merged_output.pdf';
+  closeM('m-merge');toast('Merger…');
+  try{
+    const merged=await PDFLib.PDFDocument.create();const allBms=[];
+    for(const f of sel){
+      if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+      const startPage=merged.getPageCount()+1;
+      const pages=await merged.copyPages(f.pdfLibDoc,f.pdfLibDoc.getPageIndices());pages.forEach(p=>merged.addPage(p));
+      const subBms=f._existingBms.filter(b=>!b.disabled);
+      if(subBms.length>0)subBms.forEach(bm=>allBms.push({level:rootBm?bm.level+1:bm.level,title:bm.title,page:startPage+(bm.page-1),disabled:false}));
+      else allBms.push({level:rootBm?2:1,title:extractRefNum(f.name),page:startPage,disabled:false});
+    }
+    const finalBms=rootBm?[{level:1,title:rootBm,page:1,disabled:false},...allBms]:allBms;
+    applyOutline(merged,finalBms);merged.setModificationDate(new Date());
+    triggerDL(await merged.save(),outName);toast('Merge færdig ✓','ok');
+  }catch(err){toast('Fejl: '+err.message,true);}
+}
+
+async function analyzeBulk(){
+  const toAn=S.files.filter(f=>f.bulkSel);if(!toAn.length){toast('Ingen markeret',true);return;}
+  const btn=document.getElementById('btn-ana');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+  for(const f of S.files){if(!f.bulkSel)continue;await analyzeFile(f);}
+  btn.disabled=false;btn.innerHTML='🔍 Analyser';renderFileList();if(S._mode==='list')renderListMode();toast('Analyse færdig ✓','ok');
+}
+async function analyzeBulkSilent(){for(const f of S.files){if(f.bulkStatus!=='pending')continue;await analyzeFile(f);}renderFileList();if(S._mode==='list')renderListMode();if(S.activeIdx>=0&&S.files[S.activeIdx]._existingBms.length>0){S.bms=S.files[S.activeIdx]._existingBms.map(b=>({...b}));renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}}
+async function analyzeFile(f){
+  try{
+    if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+    if(f._existingBms.length>0){f.bulkStatus='ok';f._hasBm=true;return;}
+    const toc=await f.pdfJsDoc.getOutline();
+    if(!toc||!toc.length){f.bulkStatus='none';f.bulkAction='replace';f.bulkNewBm={title:extractRefNum(f.name),page:1};}
+    else{
+      const bms=[];const flat=async(items,doc,level)=>{for(const item of items){let pg=1;try{if(item.dest){const d=typeof item.dest==='string'?await doc.getDestination(item.dest):item.dest;if(d&&d[0])pg=(await doc.getPageIndex(d[0]))+1;}}catch{}bms.push({level,title:item.title||'',page:pg,disabled:false});if(item.items&&item.items.length)await flat(item.items,doc,level+1);}};
+      await flat(toc,f.pdfJsDoc,1);f._existingBms=bms;f.bulkStatus='ok';f.bulkAction='keep';f._hasBm=bms.length>0;
+    }
+  }catch(e){f.bulkStatus='pending';}
+}
+async function doBulkBm(){
+  const sub=document.getElementById('bbm-sub').value.trim()||'Certificate';const hsrc=document.getElementById('bbm-hsrc').value;const ct=document.getElementById('bbm-ct').value.trim();const ow=document.getElementById('bbm-ow').checked;
+  closeM('m-bbm');
+  S.files.filter(f=>f.bulkSel).forEach(f=>{
+    if(!ow&&f._existingBms.length>0)return;
+    let head=hsrc==='refnum'?extractRefNum(f.name):hsrc==='fullname'?san(f.name.replace(/\.pdf$/i,'')):ct||san(f.name.replace(/\.pdf$/i,''));
+    f._existingBms=[{level:1,title:head,page:1,disabled:false},{level:2,title:sub,page:1,disabled:false}];
+    f.bulkAction='replace';f.bulkNewBm={title:head,subTitle:sub};f.bulkStatus='ok';f._hasBm=true;
+  });
+  if(S.activeIdx>=0&&S.files[S.activeIdx].bulkSel){S.bms=[...S.files[S.activeIdx]._existingBms];renderBmList();}
+  renderFileList();if(S._mode==='list')renderListMode();toast('Bogmærker sat ✓','ok');
+}
+function bulkRotate(){S.files.filter(f=>f.bulkSel).forEach(f=>{f.pendingRotation=(f.pendingRotation+90)%360;f._hasRotation=true;});renderFileList();toast('Rotation markeret');}
+
+// ================================================================
+// WATERMARK + PAGE NUMBERS + SPLIT + EXTRACT + CONVERT
+// ================================================================
+async function doWatermark(){
+  const text=document.getElementById('wm-txt').value.trim()||'FORTROLIGT';const pos=document.getElementById('wm-pos').value;
+  const opacity=parseInt(document.getElementById('wm-op').value)/100;const fontSize=parseInt(document.getElementById('wm-sz').value)||64;const allPages=document.getElementById('wm-all').checked;
+  closeM('m-wm');const files=S.files.filter(f=>f.bulkSel);toast('Stempel på '+files.length+' filer…');let done=0;
+  for(const f of files){
+    try{
+      if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+      const doc=f.pdfLibDoc;const font=await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+      const pages=allPages?doc.getPages():[doc.getPages()[0]];
+      for(const page of pages){const{width,height}=page.getSize();const tw=font.widthOfTextAtSize(text,fontSize);const color=PDFLib.rgb(.8,.1,.1);
+        if(pos==='center')page.drawText(text,{x:(width-tw)/2,y:height/2-fontSize/2,size:fontSize,font,color,opacity,rotate:PDFLib.degrees(45)});
+        else if(pos==='bottom')page.drawText(text,{x:(width-tw)/2,y:40,size:fontSize,font,color,opacity});
+        else page.drawText(text,{x:(width-tw)/2,y:height-fontSize-20,size:fontSize,font,color,opacity});}
+      const bytes=await doc.save();f.buf=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);f.pdfJsDoc=null;f.pdfLibDoc=null;done++;
+    }catch(err){toast('Fejl '+f.name+': '+err.message,true);}
+  }
+  toast(done+' filer stemplet ✓','ok');if(S.activeIdx>=0&&S.files[S.activeIdx].bulkSel)await openFile(S.activeIdx);
+}
+
+async function doPageNumbers(){
+  const pos=document.getElementById('pn-pos').value;const fmt=document.getElementById('pn-format').value;
+  const start=parseInt(document.getElementById('pn-start').value)||1;const size=parseInt(document.getElementById('pn-size').value)||11;const bulk=document.getElementById('pn-bulk').checked;
+  closeM('m-pagenum');const targets=bulk?S.files.filter(f=>f.bulkSel):(S.activeIdx>=0?[S.files[S.activeIdx]]:[]);
+  if(!targets.length){toast('Ingen filer',true);return;}
+  showProgress('Tilføjer sidetal',0,targets.length);
+  for(let ti=0;ti<targets.length;ti++){
+    if(S._cancelProgress)break;const f=targets[ti];updateProgress(ti+1,targets.length,f.name);
+    try{
+      if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+      const doc=f.pdfLibDoc;const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+      const pages=doc.getPages();const total=pages.length;
+      pages.forEach((page,i)=>{
+        if(i+1<start)return;const{width,height}=page.getSize();const n=i+1;
+        let label=fmt==='n'?String(n):fmt==='n-of-t'?`${n} / ${total}`:`Side ${n}`;
+        const tw=font.widthOfTextAtSize(label,size);
+        let x,y;
+        if(pos==='bottom-center'){x=(width-tw)/2;y=20;}else if(pos==='bottom-right'){x=width-tw-20;y=20;}else if(pos==='bottom-left'){x=20;y=20;}else if(pos==='top-center'){x=(width-tw)/2;y=height-20;}else{x=width-tw-20;y=height-20;}
+        try{page.drawText(label,{x,y,size,font,color:PDFLib.rgb(.3,.3,.3)});}catch{}
+      });
+    }catch(err){toast('Fejl '+f.name+': '+err.message,true);}
+  }
+  hideProgress();toast('Sidetal tilføjet ✓','ok');
+}
+
+function updSplitUI(){const m=document.getElementById('split-mode').value;document.getElementById('split-rw').style.display=m==='range'?'flex':'none';document.getElementById('split-aw').style.display=m==='atpage'?'flex':'none';}
+async function doSplit(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];const mode=document.getElementById('split-mode').value;closeM('m-split');
+  if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+  const base=f.name.replace(/\.pdf$/i,'');const src=f.pdfLibDoc;const n=src.getPageCount();let ranges=[];
+  if(mode==='each'){for(let i=0;i<n;i++)ranges.push([i]);}
+  else if(mode==='range'){document.getElementById('split-r').value.split(',').forEach(p=>{const m2=p.trim().match(/^(\d+)(?:-(\d+))?$/);if(!m2)return;const s2=parseInt(m2[1])-1,e2=m2[2]?parseInt(m2[2])-1:s2;const r=[];for(let i=s2;i<=Math.min(e2,n-1);i++)r.push(i);if(r.length)ranges.push(r);});}
+  else{const at=Math.max(1,parseInt(document.getElementById('split-a').value)||2)-1;ranges.push(Array.from({length:at},(_,i)=>i));if(at<n)ranges.push(Array.from({length:n-at},(_,i)=>at+i));}
+  if(!ranges.length){toast('Ingen gyldige sidebånd',true);return;}
+  toast('Splitter…');
+  for(const r of ranges){const nd=await PDFLib.PDFDocument.create();const pages=await nd.copyPages(src,r);pages.forEach(p=>nd.addPage(p));const bytes=await nd.save();triggerDL(bytes,`${base}_side${r[0]+1}${r.length>1?'-'+(r[r.length-1]+1):''}.pdf`);await sleep(350);}
+  toast('Split færdig ✓','ok');
+}
+
+async function doExtract(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
+  const pagesStr=document.getElementById('extract-pages').value.trim();const outName=document.getElementById('extract-name').value.trim()||'extracted.pdf';closeM('m-extract');
+  if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+  const src=f.pdfLibDoc;const n=src.getPageCount();const indices=[];
+  pagesStr.split(',').forEach(part=>{const m=part.trim().match(/^(\d+)(?:-(\d+))?$/);if(!m)return;const s=parseInt(m[1])-1,e=m[2]?parseInt(m[2])-1:s;for(let i=s;i<=Math.min(e,n-1);i++)if(!indices.includes(i))indices.push(i);});
+  if(!indices.length){toast('Ingen gyldige sider',true);return;}
+  const nd=await PDFLib.PDFDocument.create();const pages=await nd.copyPages(src,indices);pages.forEach(p=>nd.addPage(p));
+  triggerDL(await nd.save(),outName);toast(`Udtræk: ${indices.length} sider ✓`,'ok');
+}
+function extractSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}document.getElementById('extract-pages').value=[...S._selPages].sort((a,b)=>a-b).join(', ');document.getElementById('extract-name').value=S.files[S.activeIdx].name.replace('.pdf','_udtræk.pdf');openM('m-extract');}
+
+async function doConvert(){
+  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];const type=document.getElementById('convert-type').value;const scale=parseFloat(document.getElementById('convert-scale').value)||2;closeM('m-convert');toast('Konverterer…');
+  if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+  const zip=new JSZip();const fmt=type==='to-jpg'?'jpeg':'png';const mime=type==='to-jpg'?'image/jpeg':'image/png';
+  for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
+    const page=await f.pdfJsDoc.getPage(pg);const vp=page.getViewport({scale});
+    const cv=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
+    await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+    const base64=cv.toDataURL(mime,0.92).split(',')[1];
+    zip.file(san(f.name.replace(/\.pdf$/i,''))+`_side${pg}.${fmt}`,base64,{base64:true});
+  }
+  const blob=await zip.generateAsync({type:'blob'});const url=URL.createObjectURL(blob);const a=Object.assign(document.createElement('a'),{href:url,download:san(f.name.replace(/\.pdf$/i,''))+'_billeder.zip'});a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
+  toast('Konverteret ✓','ok');
+}
+async function doPwdMark(){
+  const txt=document.getElementById('pwd-txt').value.trim()||'BESKYTTET';const bulk=document.getElementById('pwd-bulk').checked;
+  closeM('m-pwd');const targets=bulk?S.files.filter(f=>f.bulkSel):(S.activeIdx>=0?[S.files[S.activeIdx]]:[]);
+  for(const f of targets){
+    try{
+      if(!f.pdfLibDoc)f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+      const doc=f.pdfLibDoc;const font=await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+      doc.getPages().forEach(page=>{const{width,height}=page.getSize();const tw=font.widthOfTextAtSize(txt,48);page.drawText(txt,{x:(width-tw)/2,y:height/2,size:48,font,color:PDFLib.rgb(.8,.1,.1),opacity:.25,rotate:PDFLib.degrees(45)});});
+    }catch{}
+  }
+  toast(targets.length+' filer markeret ✓','ok');
+}
+
+// ================================================================
+// BAKE ANNOTATIONS + TEXT EDITS + FORM FIELDS
+// ================================================================
+async function bakeAnnotations(doc,fileIdx){
+  const fileAnnos=S.annos[fileIdx];if(!fileAnnos)return;
+  const f=S.files[fileIdx];const dpr=window.devicePixelRatio;
+  for(const pageNumStr of Object.keys(fileAnnos)){
+    const pageNum=parseInt(pageNumStr);const annos=fileAnnos[pageNum];if(!annos||!annos.length)continue;
+    const pageIdx=pageNum-1;if(pageIdx<0||pageIdx>=doc.getPageCount())continue;
+    const page=doc.getPage(pageIdx);const{width:pW,height:pH}=page.getSize();
+    const pdfPage=await f.pdfJsDoc.getPage(pageNum);const vp=pdfPage.getViewport({scale:S.zoom*dpr});
+    const scX=pW/vp.width,scY=pH/vp.height;const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    for(const a of annos){
+      const os=a._ocrScale||1;const sf=os>1?1/os*S.zoom:1;
+      const px=a.x*scX*sf,py=pH-(a.y*scY*sf);const pw=a.w*scX*sf,ph_=a.h*scY*sf;
+      const rgb=hexToRgb(a.color||'#000000');const[r,g,b]=[rgb[0],rgb[1],rgb[2]];
+      switch(a.type){
+        case 'highlight':page.drawRectangle({x:px,y:py-ph_,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:a.opacity*.4,borderWidth:0});break;
+        case 'redact':page.drawRectangle({x:px,y:Math.max(0,py-ph_),width:Math.max(1,pw),height:Math.max(1,ph_),color:PDFLib.rgb(r,g,b),opacity:1,borderWidth:0});break;
+        case 'rect':page.drawRectangle({x:px,y:py-ph_,width:pw,height:ph_,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
+        case 'circle':page.drawEllipse({x:px+pw/2,y:py-ph_/2,xScale:pw/2,yScale:ph_/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
+        case 'line':case 'arrow':page.drawLine({start:{x:a.x1*scX,y:pH-a.y1*scY},end:{x:a.x2*scX,y:pH-a.y2*scY},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});break;
+        case 'pen':if(a.points&&a.points.length>1){for(let i=1;i<a.points.length;i++){page.drawLine({start:{x:a.points[i-1].x*scX,y:pH-a.points[i-1].y*scY},end:{x:a.points[i].x*scX,y:pH-a.points[i].y*scY},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}}break;
+        case 'text':if(a.text){const lines=a.text.split('\n');const fs=Math.max(6,(a.fontSize||14)*scY*.7);lines.forEach((ln,li)=>{try{page.drawText(ln,{x:px,y:py-(li+1)*fs*1.2,size:fs,font,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}catch{}});}break;
+        case 'image':if(a._src){try{const resp=await fetch(a._src);const ab=await resp.arrayBuffer();const pdfImg=a._src.includes('png')?await doc.embedPng(ab):await doc.embedJpg(ab);page.drawImage(pdfImg,{x:px,y:py-ph_,width:pw,height:ph_,opacity:a.opacity});}catch{}}break;
+      }
+    }
+  }
+}
+
+async function bakeTextEdits(doc,fileIdx){
+  // Form fields
+  if(S._formFields&&S._formFields[fileIdx]){
+    try{
+      const form=doc.getForm();const fields=form.getFields();
+      fields.forEach(field=>{const name=field.getName();const val=S._formFields[fileIdx][name];if(val===undefined)return;try{if(field.constructor.name==='PDFTextField')field.setText(String(val));}catch{};});
+      try{doc.getForm().flatten();}catch{}
+    }catch{}
+  }
+  // Text edits
+  if(!S._textEdits||!S._textEdits[fileIdx])return;
+  const fontR=await doc.embedFont(PDFLib.StandardFonts.Helvetica);const fontB=await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+  for(const pgStr of Object.keys(S._textEdits[fileIdx])){
+    const pgNum=parseInt(pgStr);const edits=S._textEdits[fileIdx][pgNum];if(!edits||!edits.length)continue;
+    const pgIdx=pgNum-1;if(pgIdx<0||pgIdx>=doc.getPageCount())continue;
+    const page=doc.getPage(pgIdx);const{height:pH}=page.getSize();
+    for(const ed of edits){
+      const x=ed.newPdfX??ed.pdfX;const y=ed.newPdfY??ed.pdfY;const fs=Math.max(6,ed.fontSize*0.92);
+      if(ed.deleted){let tw=fs*ed.origText.length*0.55;try{tw=fontR.widthOfTextAtSize(ed.origText,fs);}catch{}page.drawRectangle({x:x-1,y:y-2,width:tw+4,height:fs+4,color:PDFLib.rgb(1,1,1),opacity:1,borderWidth:0});continue;}
+      const changed=ed.newText!==ed.origText||ed.newPdfX!=null;if(!changed)continue;
+      let tw=fs*ed.origText.length*0.55;try{tw=fontR.widthOfTextAtSize(ed.origText,fs);}catch{}
+      page.drawRectangle({x:ed.pdfX-1,y:ed.pdfY-2,width:tw+4,height:fs+4,color:PDFLib.rgb(1,1,1),opacity:1,borderWidth:0});
+      try{const safe=ed.newText.replace(/[^\x20-\x7E\xC0-\xFF]/g,'?');const useFont=ed.fontFamily&&ed.fontFamily.toLowerCase().includes('bold')?fontB:fontR;page.drawText(safe,{x,y,size:fs,font:useFont,color:PDFLib.rgb(0,0,0)});}catch{}
+    }
+  }
+}
+
+function hexToRgb(hex){hex=hex.replace('#','');if(hex.length===3)hex=hex.split('').map(c=>c+c).join('');const n=parseInt(hex,16);return[(n>>16)/255,((n>>8)&255)/255,(n&255)/255];}
+
+// ================================================================
+// OUTLINE
+// ================================================================
+function applyOutline(doc,bms){
+  if(!bms||!bms.length)return;const ctx=doc.context,cat=doc.catalog;try{cat.delete(PDFLib.PDFName.of('Outlines'));}catch{}
+  const outRef=ctx.nextRef();const tree=[];
+  bms.forEach(bm=>{if(bm.level===1)tree.push({bm,children:[]});else if(tree.length>0)tree[tree.length-1].children.push(bm);else tree.push({bm:{...bm,level:1},children:[]});});
+  const nodeRefs=tree.map(()=>ctx.nextRef());const childRefs=tree.map(n=>n.children.map(()=>ctx.nextRef()));
+  tree.forEach((node,ni)=>{
+    const nodeRef=nodeRefs[ni];const pgIdx=Math.max(0,Math.min(node.bm.page-1,doc.getPageCount()-1));const page=doc.getPage(pgIdx);const{height}=page.getSize();
+    const dict=ctx.obj({Title:PDFLib.PDFString.of(node.bm.title),Parent:outRef,Dest:ctx.obj([page.ref,PDFLib.PDFName.of('XYZ'),PDFLib.PDFNumber.of(0),PDFLib.PDFNumber.of(height),PDFLib.PDFNumber.of(0)])});
+    if(ni>0)dict.set(PDFLib.PDFName.of('Prev'),nodeRefs[ni-1]);if(ni<tree.length-1)dict.set(PDFLib.PDFName.of('Next'),nodeRefs[ni+1]);
+    if(node.children.length>0){dict.set(PDFLib.PDFName.of('First'),childRefs[ni][0]);dict.set(PDFLib.PDFName.of('Last'),childRefs[ni][node.children.length-1]);dict.set(PDFLib.PDFName.of('Count'),PDFLib.PDFNumber.of(-node.children.length));}
+    ctx.assign(nodeRef,dict);
+    node.children.forEach((child,ci)=>{const cRef=childRefs[ni][ci];const cpIdx=Math.max(0,Math.min(child.page-1,doc.getPageCount()-1));const cPage=doc.getPage(cpIdx);const{height:ch}=cPage.getSize();const cDict=ctx.obj({Title:PDFLib.PDFString.of(child.title),Parent:nodeRef,Dest:ctx.obj([cPage.ref,PDFLib.PDFName.of('XYZ'),PDFLib.PDFNumber.of(0),PDFLib.PDFNumber.of(ch),PDFLib.PDFNumber.of(0)])});if(ci>0)cDict.set(PDFLib.PDFName.of('Prev'),childRefs[ni][ci-1]);if(ci<node.children.length-1)cDict.set(PDFLib.PDFName.of('Next'),childRefs[ni][ci+1]);ctx.assign(cRef,cDict);});
+  });
+  ctx.assign(outRef,ctx.obj({Type:PDFLib.PDFName.of('Outlines'),First:nodeRefs[0],Last:nodeRefs[nodeRefs.length-1],Count:PDFLib.PDFNumber.of(tree.length)}));
+  cat.set(PDFLib.PDFName.of('Outlines'),outRef);cat.set(PDFLib.PDFName.of('PageMode'),PDFLib.PDFName.of('UseOutlines'));
+}
+
+// ================================================================
+// DOWNLOAD
+// ================================================================
+async function smartDownload(){
+  const sel=S.files.filter(f=>f.bulkSel);
+  if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
+  if(sel.length===0){if(S.activeIdx>=0)await downloadFilePDF(S.activeIdx);}
+  else if(sel.length===1){await downloadFilePDF(S.files.indexOf(sel[0]));}
+  else{await bulkZip(sel);}
+}
+
+async function downloadFilePDF(fileIdx){
+  const f=S.files[fileIdx];const btn=document.getElementById('tb-save');if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
+  try{
+    const doc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+    doc.setModificationDate(new Date());
+    const viewRot=f._viewRotation||0;if(viewRot)doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+viewRot)%360));});
+    if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
+    if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
+    if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
+    await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);
+    const activeBms=f._existingBms.filter(b=>!b.disabled);
+    if(activeBms.length>0)applyOutline(doc,activeBms);
+    else if(f.bulkAction==='replace'&&f.bulkNewBm)applyOutline(doc,[{level:1,title:f.bulkNewBm.title,page:1,disabled:false},{level:2,title:f.bulkNewBm.subTitle||'Certificate',page:1,disabled:false}]);
+    triggerDL(await doc.save(),(S.activeIdx===fileIdx&&S.customFn?S.customFn:san(f.name.replace(/\.pdf$/i,'')))+'.pdf');
+    toast('Download ✓','ok');
+  }catch(err){toast('Fejl: '+err.message,true);}
+  if(btn){btn.disabled=false;btn.innerHTML='⬇ Download';}
+}
+
+async function bulkZip(files){
+  if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
+  showProgress('Forbereder ZIP',0,files.length);S._cancelProgress=false;
+  const zip=new JSZip();let done=0;
+  for(let fi=0;fi<files.length;fi++){
+    if(S._cancelProgress)break;const f=files[fi];const fileIdx=S.files.indexOf(f);updateProgress(fi+1,files.length,f.name);
+    try{
+      const doc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
+      doc.setModificationDate(new Date());
+      if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
+      if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
+      if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
+      await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);
+      const activeBms=f._existingBms.filter(b=>!b.disabled);
+      if(activeBms.length>0)applyOutline(doc,activeBms);
+      else if(f.bulkAction==='replace'&&f.bulkNewBm)applyOutline(doc,[{level:1,title:f.bulkNewBm.title,page:1,disabled:false},{level:2,title:f.bulkNewBm.subTitle||'Certificate',page:1,disabled:false}]);
+      zip.file(san(f.name.replace(/\.pdf$/i,''))+'.pdf',await doc.save());done++;
+    }catch(err){toast('Fejl '+f.name+': '+err.message,true);}
+  }
+  if(!S._cancelProgress){
+    updateProgress(files.length,files.length,'Komprimerer…');
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}},m=>{document.getElementById('pb-sub').textContent='Komprimerer: '+Math.round(m.percent)+'%';});
+    hideProgress();const url=URL.createObjectURL(blob);const a=Object.assign(document.createElement('a'),{href:url,download:'PDFToolPro_export.zip'});a.click();setTimeout(()=>URL.revokeObjectURL(url),6000);
+    toast(done+' filer downloadet som ZIP ✓','ok');
+  } else {hideProgress();toast('Annulleret',true);}
+}
+
+// ================================================================
+// META
+// ================================================================
+function loadMeta(f){const doc=f.pdfLibDoc;const s=(id,v)=>{document.getElementById(id).value=v||'';};try{s('m-title',doc.getTitle());s('m-author',doc.getAuthor());s('m-subject',doc.getSubject());s('m-keywords',doc.getKeywords());s('m-creator',doc.getCreator());const cd=doc.getCreationDate();s('m-created',cd?cd.toLocaleString('da-DK'):'');document.getElementById('m-raw').textContent='Sider: '+doc.getPageCount()+'\nProducent: '+(doc.getProducer()||'—');}catch{}}
+function toggleRaw(){const el=document.getElementById('m-raw');el.style.display=el.style.display==='none'?'block':'none';}
+function applyMeta(){if(S.activeIdx<0)return;const doc=S.files[S.activeIdx].pdfLibDoc;try{doc.setTitle(document.getElementById('m-title').value.trim());doc.setAuthor(document.getElementById('m-author').value.trim());doc.setSubject(document.getElementById('m-subject').value.trim());doc.setKeywords([document.getElementById('m-keywords').value.trim()]);doc.setCreator(document.getElementById('m-creator').value.trim());doc.setModificationDate(new Date());toast('Metadata gemt ✓','ok');}catch(err){toast('Fejl: '+err.message,true);}}
+
+// ================================================================
+// PROGRESS + HELPERS
+// ================================================================
+function showProgress(title,cur,tot){S._cancelProgress=false;document.getElementById('pb-title').textContent=title;document.getElementById('pb-sub').textContent=cur+' / '+tot;document.getElementById('pb-fill').style.width=(tot>0?Math.round(cur/tot*100):0)+'%';document.getElementById('progress-wrap').classList.add('show');}
+function updateProgress(cur,tot,sub){document.getElementById('pb-sub').textContent=sub+' ('+cur+'/'+tot+')';document.getElementById('pb-fill').style.width=Math.round(cur/tot*100)+'%';}
+function hideProgress(){document.getElementById('progress-wrap').classList.remove('show');}
+function cancelProgress(){S._cancelProgress=true;hideProgress();}
+function switchRT(id){document.querySelectorAll('.rtab').forEach(t=>t.classList.toggle('active',t.dataset.rt===id));document.querySelectorAll('.rp').forEach(p=>p.classList.toggle('active',p.id==='rp-'+id));}
+function openM(id){document.getElementById(id).classList.add('open');}
+function closeM(id){document.getElementById(id).classList.remove('open');}
+
+function clearAll(){
+  if(S.activeIdx>=0&&S.activeIdx<S.files.length)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
+  S.bms=[];S.page=1;S.totalPages=0;S._selPages.clear();
+  const cv=document.getElementById('pdf-canvas');cv.getContext('2d').clearRect(0,0,cv.width,cv.height);cv.width=0;cv.height=0;
+  const av=document.getElementById('anno-canvas');if(av.width){av.getContext('2d').clearRect(0,0,av.width,av.height);av.width=0;av.height=0;}
+  document.getElementById('bm-list').innerHTML='';document.getElementById('bm-count').textContent='—';
+  document.getElementById('te-blocks').innerHTML='<div class="te-empty">Klik "Hent tekst" eller "Formular"</div>';
+  document.getElementById('pn-tot').textContent='/ —';document.getElementById('pn-inp').value=1;
+  document.getElementById('pt-list').innerHTML='';document.getElementById('cv-sizer').style.display='none';
+  ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
+  showEmpty(true);closeFnBox();cancelBmEdit();
+  document.getElementById('txt-overlay').innerHTML='';document.getElementById('txt-overlay').style.pointerEvents='none';
+  document.getElementById('search-overlay').innerHTML='';
+  S._inlineEditMode=false;S._selEl=null;
+}
+function showEmpty(show){document.getElementById('empty-st').style.display=show?'flex':'none';document.getElementById('cv-sizer').style.display=show?'none':'inline-block';}
+function prog(p){const bar=document.getElementById('prog');bar.style.width=p+'%';if(p>=100)setTimeout(()=>bar.style.width='0',700);}
+let _tt;
+function toast(msg,type=''){
+  const el=document.getElementById('toast');el.textContent=msg;
+  el.className='show'+(type==='err'||type===true?' err':type==='ok'?' ok':'');
+  clearTimeout(_tt);_tt=setTimeout(()=>el.className='',4000);
+}
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function triggerDL(bytes,name){const blob=new Blob([bytes],{type:'application/pdf'});const url=URL.createObjectURL(blob);const a=Object.assign(document.createElement('a'),{href:url,download:name});a.click();setTimeout(()=>URL.revokeObjectURL(url),6000);}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+// Init signature canvas after load
+window.addEventListener('load',()=>{initSigCanvas();});
+</script>
+</body>
+</html>
