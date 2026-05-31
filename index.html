@@ -2458,14 +2458,66 @@ async function initAISystem() {
     return;
   }
 
-  // Already set up — init in background
-  if (badge) { badge.className = 'loading'; badge.innerHTML = '<span class="spin"></span> AI indlæser…'; }
-  try {
-    await initTesseract();
-    if (badge) { badge.className = 'ready'; badge.innerHTML = '✓ AI klar'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); }, 3000); }
-  } catch(e) {
-    if (badge) { badge.className = 'error'; badge.innerHTML = '⚠ AI fejl — klik her'; badge.style.cursor='pointer'; badge.onclick=()=>location.reload(); }
+  // Pre-load Tesseract silently in background — ready before you need it
+  if (badge) {
+    badge.style.display = 'flex';
+    badge.style.opacity = '1';
+    badge.className = 'loading';
+    badge.innerHTML = '<span class="spin"></span> OCR forberedes…';
   }
+
+  try {
+    // Load silently — no progress bar, just status badge
+    await initTesseractSilent();
+    if (badge) {
+      badge.className = 'ready';
+      badge.innerHTML = '✓ OCR klar';
+      setTimeout(()=>{
+        badge.style.transition = 'opacity .5s';
+        badge.style.opacity = '0';
+        setTimeout(()=>{ badge.style.display='none'; badge.style.opacity='1'; },500);
+      }, 2500);
+    }
+  } catch(e) {
+    if (badge) {
+      badge.className = 'error';
+      badge.innerHTML = '⚠ OCR fejl — <u style="cursor:pointer" onclick="retryAI()">prøv igen</u>';
+    }
+  }
+}
+
+// Silent pre-load — no UI disruption
+async function initTesseractSilent() {
+  if (AI.tessReady && AI.tessWorker) return AI.tessWorker;
+  if (typeof Tesseract === 'undefined') throw new Error('Tesseract ikke indlæst');
+
+  const badge = document.getElementById('ai-ready-badge');
+
+  AI.tessWorker = await Tesseract.createWorker(['dan', 'eng'], Tesseract.OEM.DEFAULT, {
+    logger: m => {
+      // Update only the small badge — no progress bar
+      if (!badge) return;
+      if (m.status === 'loading tesseract core') badge.innerHTML = '<span class="spin"></span> OCR kerne…';
+      else if (m.status === 'loading language traineddata') {
+        const pct = Math.round((m.progress||0)*100);
+        badge.innerHTML = '<span class="spin"></span> OCR sprogpakke ' + pct + '%';
+      }
+      else if (m.status === 'initializing api') badge.innerHTML = '<span class="spin"></span> OCR starter…';
+      else if (m.status === 'recognizing text') {
+        const pct = Math.round((m.progress||0)*100);
+        badge.innerHTML = '🔍 ' + pct + '%';
+        badge.className = 'loading';
+      }
+    }
+  });
+  AI.tessReady = true;
+  return AI.tessWorker;
+}
+
+async function retryAI() {
+  AI.tessReady = false;
+  AI.tessWorker = null;
+  await initAISystem();
 }
 
 async function startFirstRunSetup() {
@@ -2502,12 +2554,14 @@ async function startFirstRunSetup() {
     localStorage.setItem('ptp_ai_setup', 'done');
     AI.setupDone = true;
 
-    await sleep(1200);
+    await sleep(800);
     const setup = document.getElementById('first-run-setup');
     if (setup) { setup.style.opacity = '0'; setup.style.transition = 'opacity .4s'; setTimeout(()=>setup.style.display='none', 400); }
     const badge = document.getElementById('ai-ready-badge');
-    if (badge) { badge.style.display='flex'; badge.className='ready'; badge.innerHTML='✓ AI klar'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); },3000); }
-    toast('PDF Tool Pro er klar! 🎉', 'ok');
+    if (badge) { badge.style.display='flex'; badge.className='ready'; badge.innerHTML='✓ OCR klar og klar til brug!'; setTimeout(()=>{ badge.style.transition='opacity .5s'; badge.style.opacity='0'; setTimeout(()=>{ badge.style.display='none'; badge.style.opacity='1'; },500); },3500); }
+    toast('PDF Tool Pro er klar — OCR er allerede indlæst! 🎉', 'ok');
+    // Tesseract already loaded during setup — mark as ready
+    AI.setupDone = true;
 
   } catch(e) {
     errEl.textContent = '⚠ Fejl: ' + e.message + ' — Tjek din internetforbindelse og prøv igen.';
@@ -2549,22 +2603,35 @@ function setDlIcon(n, state) {
 // Init Tesseract worker
 async function initTesseract(onProgress) {
   if (AI.tessReady && AI.tessWorker) return AI.tessWorker;
-  if (typeof Tesseract === 'undefined') throw new Error('Tesseract.js ikke indlæst');
+  if (typeof Tesseract === 'undefined') throw new Error('Tesseract.js ikke indlæst — genindlæs siden');
+
+  // Update progress bar subtitle with loading steps
+  const updateSub = (msg) => {
+    const el = document.getElementById('pb-sub');
+    if (el) el.textContent = msg;
+    const badge = document.getElementById('ai-ready-badge');
+    if (badge) { badge.style.display='flex'; badge.style.opacity='1'; badge.className='loading'; badge.innerHTML='<span class=spin></span> '+msg; }
+  };
+
+  updateSub('Henter OCR sprogpakker… (første gang ~30 sek)');
 
   AI.tessWorker = await Tesseract.createWorker(['dan', 'eng'], Tesseract.OEM.DEFAULT, {
     logger: m => {
-      if (m.status === 'recognizing text' && onProgress) onProgress(m.progress || 0);
-      // Update AI badge during recognition
-      const badge = document.getElementById('ai-ready-badge');
-      if (badge && badge.className === 'ready' && m.status === 'recognizing text') {
-        badge.style.display = 'flex';
-        badge.style.opacity = '1';
-        badge.innerHTML = '🔍 OCR: ' + Math.round((m.progress||0)*100) + '%';
-        badge.className = 'loading';
+      if (m.status === 'loading tesseract core') updateSub('Indlæser OCR kerne…');
+      else if (m.status === 'initializing tesseract') updateSub('Initialiserer OCR…');
+      else if (m.status === 'loading language traineddata') updateSub('Henter sprogpakke: ' + Math.round((m.progress||0)*100) + '%');
+      else if (m.status === 'initializing api') updateSub('Starter OCR motor…');
+      else if (m.status === 'recognizing text') {
+        const pct = Math.round((m.progress||0)*100);
+        updateSub('Analyserer: ' + pct + '%');
+        if (onProgress) onProgress(m.progress || 0);
+        const fill = document.getElementById('pb-fill');
+        if (fill) fill.style.width = pct + '%';
       }
     }
   });
   AI.tessReady = true;
+  updateSub('OCR klar ✓');
   if (onProgress) onProgress(1);
   return AI.tessWorker;
 }
@@ -2596,7 +2663,10 @@ async function initTransformers(onProgress) {
 // Run OCR using Tesseract (replaces old getTessWorker)
 async function getTessWorker() {
   if (!AI.tessReady || !AI.tessWorker) {
-    await initTesseract();
+    // Not pre-loaded yet — show badge message
+    const badge = document.getElementById('ai-ready-badge');
+    if (badge) { badge.style.display='flex'; badge.style.opacity='1'; badge.className='loading'; badge.innerHTML='<span class="spin"></span> OCR indlæser…'; }
+    await initTesseractSilent();
   }
   return AI.tessWorker;
 }
