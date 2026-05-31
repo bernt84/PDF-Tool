@@ -1342,7 +1342,42 @@ function endDraw(e){
   annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
 }
-function redrawAnnos(){const av=document.getElementById('anno-canvas');if(!av.width)return;const ctx=av.getContext('2d');ctx.clearRect(0,0,av.width,av.height);getAnnos(S.activeIdx,S.page).forEach(a=>drawAnno(ctx,a));}
+async function resolveAnnoCoords(anno,fileIdx,pageNum){
+  if(!anno._needsCoordConvert)return;
+  try{
+    const f=S.files[fileIdx];if(!f||!f.pdfJsDoc)return;
+    const page=await f.pdfJsDoc.getPage(pageNum);
+    const dpr=window.devicePixelRatio;
+    const vp=page.getViewport({scale:S.zoom,rotation:(S.rotation+((f.pageRotations&&f.pageRotations[pageNum])||0))%360});
+    const vPt=vp.convertToViewportPoint(anno._pdfX,anno._pdfY);
+    const iw=Math.max(anno._pdfW*S.zoom,10);
+    const ht=Math.max(anno._pdfH*S.zoom*1.3,10);
+    anno.x=vPt[0]*dpr;anno.y=(vPt[1]-ht)*dpr;
+    anno.w=iw*dpr;anno.h=ht*dpr*1.5;
+    anno._needsCoordConvert=false;
+  }catch{}
+}
+function redrawAnnos(){
+  const av=document.getElementById('anno-canvas');if(!av.width)return;
+  const ctx=av.getContext('2d');ctx.clearRect(0,0,av.width,av.height);
+  const annos=getAnnos(S.activeIdx,S.page);
+  // Resolve any pending coord conversions synchronously using cached viewport
+  const f=S.activeIdx>=0?S.files[S.activeIdx]:null;
+  annos.forEach(a=>{
+    if(a._needsCoordConvert&&f&&f.pdfJsDoc){
+      // Use sync estimation until async resolves
+      const dpr=window.devicePixelRatio;
+      const estScale=S.zoom*dpr;
+      a.x=a._pdfX*estScale*0.75;
+      a.y=(a._pdfY*estScale*0.75)-a._pdfH*estScale*0.75;
+      a.w=Math.max(a._pdfW*estScale*0.75,10);
+      a.h=Math.max(a._pdfH*estScale*1.2,10);
+      // Async resolve for next redraw
+      resolveAnnoCoords(a,S.activeIdx,S.page).then(()=>redrawAnnos());
+    }
+    drawAnno(ctx,a);
+  });
+}
 function drawAnno(ctx,a){
   ctx.save();ctx.globalAlpha=a.opacity;const dpr=window.devicePixelRatio;
   switch(a.type){
@@ -1848,7 +1883,7 @@ async function runBulkOCRSearch(){
   const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
   const globalTerm=document.getElementById('ocr-bulk-term').value.trim();const useBm=document.getElementById('ocr-use-bm').checked;
   const results=document.getElementById('ocr-bulk-results');results.innerHTML='';
-  showProgress('OCR Overstrekning',0,files.length);
+  showProgress('OCR Markering',0,files.length);
   // Pre-initialize Tesseract worker
   try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;}
   for(let fi=0;fi<files.length;fi++){
@@ -1870,36 +1905,29 @@ async function runBulkOCRSearch(){
         const end=Math.min(start+BATCH-1,numPages);
         updateProgress(fi+1,files.length,`${f.name} — side ${start}-${end}/${numPages}`);
 
-        // Use cached text if available — instant
-        const batch=await Promise.all(
-          Array.from({length:end-start+1},(_,i)=>start+i).map(async pg=>{
-            const textItems=f._textCache&&f._textCache[pg]
-              ? f._textCache[pg]
-              : (await (async()=>{const p=await f.pdfJsDoc.getPage(pg);const tc=await p.getTextContent();return tc.items.filter(i=>i.str&&i.str.trim());})());
-            const pdfPage=await f.pdfJsDoc.getPage(pg);
-            return {pg,pdfPage,textContent:{items:textItems}};
-          })
-        );
-
-        // Process results
-        for(const {pg,pdfPage,textContent} of batch){
-          const matches=textContent.items.filter(item=>item.str&&item.str.toLowerCase().includes(termLow));
+        // Use cached text — no getPage calls needed
+        const batchPages=Array.from({length:end-start+1},(_,i)=>start+i);
+        for(const pg of batchPages){
+          const textItems=f._textCache&&f._textCache[pg] ? f._textCache[pg] : [];
+          const matches=textItems.filter(item=>item.str&&item.str.toLowerCase().includes(termLow));
           if(matches.length>0){
-            const vp=pdfPage.getViewport({scale:1.0});
+            // Store raw PDF coords — convert to canvas when drawn
             matches.forEach(item=>{
-              const tx=item.transform;const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
-              const iw2=Math.max((item.width||50),10);const ht=Math.max((item.height||12)*1.3,10);
+              const tx=item.transform;
               getAnnos(fileIdx,pg).push({
                 type:(S._ocrMarkType||'highlight'),
-                x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
-                w:iw2*S.zoom*dpr,h:ht*S.zoom*dpr*1.5,
+                // Store PDF coords directly — will be converted at render time
+                _pdfX:tx[4],_pdfY:tx[5],
+                _pdfW:item.width||50,_pdfH:item.height||12,
+                x:0,y:0,w:100,h:14, // placeholder, recalculated on render
                 color:S.redactColor,strokeSize:1,
-                opacity:(S._ocrMarkType==='redact'?1:0.5)
+                opacity:(S._ocrMarkType==='redact'?1:0.5),
+                _needsCoordConvert:true,_fileIdx:fileIdx,_pg:pg
               });
               found++;
             });
-          } else {
-            // No text layer — OCR this page
+          } else if(!textItems.length){
+            // No text cache = scanned page, needs OCR
             const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
             const result=await runTesseract(off);
             (result.words||[]).forEach(w=>{
@@ -2198,7 +2226,18 @@ async function analyzeBulk(){
   for(const f of S.files){if(!f.bulkSel)continue;await analyzeFile(f);}
   btn.disabled=false;btn.innerHTML='🔍 Analyser';renderFileList();if(S._mode==='list')renderListMode();toast('Analyse færdig ✓','ok');
 }
-async function analyzeBulkSilent(){for(const f of S.files){if(f.bulkStatus!=='pending')continue;await analyzeFile(f);}renderFileList();if(S._mode==='list')renderListMode();if(S.activeIdx>=0&&S.files[S.activeIdx]._existingBms.length>0){S.bms=S.files[S.activeIdx]._existingBms.map(b=>({...b}));renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}}
+async function analyzeBulkSilent(){
+  const badge=document.getElementById('ai-ready-badge');
+  for(const f of S.files){
+    if(f.bulkStatus!=='pending')continue;
+    // Show status in badge
+    if(badge){badge.style.display='flex';badge.style.opacity='1';badge.className='loading';badge.innerHTML='<span class=spin></span> Analyserer '+f.name.substring(0,20)+'…';}
+    await analyzeFile(f);
+    renderFileList();if(S._mode==='list')renderListMode();
+  }
+  if(badge){badge.className='ready';badge.innerHTML='✓ Analyse klar';badge.style.display='flex';badge.style.opacity='1';setTimeout(()=>{badge.style.transition='opacity .5s';badge.style.opacity='0';setTimeout(()=>{badge.style.display='none';badge.style.opacity='1';},500);},2000);}
+  if(S.activeIdx>=0&&S.files[S.activeIdx]._existingBms.length>0){S.bms=S.files[S.activeIdx]._existingBms.map(b=>({...b}));renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}
+}
 async function analyzeFile(f){
   try{
     if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
