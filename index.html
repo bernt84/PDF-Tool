@@ -10,7 +10,7 @@
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
 
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1546,23 +1546,29 @@ let _tessLang = 'dan+eng'; // dansk + engelsk som standard
 async function getTessWorker() {
   if (_tessWorker && _tessReady) return _tessWorker;
   
-  // Show loading status
   const status = document.getElementById('mupdf-status');
-  if (status) { status.textContent = '⏳ Indlæser OCR (Tesseract)…'; status.className = 'show'; }
+  if (status) { status.textContent = '⏳ Indlæser OCR…'; status.className = 'show'; }
+  
+  // Check Tesseract is loaded
+  if (typeof Tesseract === 'undefined') {
+    throw new Error('Tesseract.js er ikke indlæst — tjek internetforbindelsen og genindlæs siden');
+  }
   
   try {
-    _tessWorker = await Tesseract.createWorker('dan+eng', 1, {
+    // Tesseract.js v5 API
+    _tessWorker = await Tesseract.createWorker(['dan', 'eng'], Tesseract.OEM.DEFAULT, {
       logger: m => {
-        if (m.status === 'recognizing text' && status) {
-          status.textContent = '🔍 OCR: ' + Math.round(m.progress * 100) + '%';
+        if (status && m.status === 'recognizing text') {
+          status.textContent = '🔍 OCR: ' + Math.round((m.progress||0) * 100) + '%';
         }
       }
     });
     _tessReady = true;
     if (status) { status.textContent = '✓ OCR klar'; status.className = 'show ready'; setTimeout(()=>status.className='', 2500); }
   } catch(err) {
-    if (status) { status.textContent = '⚠ OCR fejl: ' + err.message; status.className = 'show error'; }
-    throw err;
+    _tessWorker = null; _tessReady = false;
+    if (status) { status.textContent = '⚠ OCR fejl'; status.className = 'show error'; }
+    throw new Error('OCR initialisering fejlede: ' + err.message);
   }
   return _tessWorker;
 }
@@ -1575,18 +1581,23 @@ async function runTesseract(canvas) {
   }
   
   const worker = await getTessWorker();
+  
+  // Recognize — works with both canvas and dataURL
   const { data } = await worker.recognize(canvas);
   
-  // Convert Tesseract word format to our internal format
+  if (!data) throw new Error('Tesseract returnerede ingen data');
+  
+  // Convert Tesseract word format
   const words = [];
   (data.words || []).forEach(w => {
+    if (!w || !w.bbox) return;
     words.push({
-      text: w.text,
-      bbox: { x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }
+      text: w.text || '',
+      bbox: { x0: w.bbox.x0||0, y0: w.bbox.y0||0, x1: w.bbox.x1||0, y1: w.bbox.y1||0 }
     });
   });
   
-  return { text: data.text, words };
+  return { text: data.text || '', words };
 }
 
 // Google Vision API fallback (only if API key set)
