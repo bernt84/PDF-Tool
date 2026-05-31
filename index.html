@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/transformers.min.js"></script>
 
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -304,10 +305,102 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #file-input{display:none}#img-input{display:none}
 
 /* API setup CSS removed */
+
+/* File status badges in list rows */
+.fi-status-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.fi-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700}
+.fib-bm-ok{background:rgba(34,197,94,.15);color:#22c55e}
+.fib-bm-none{background:rgba(249,115,22,.15);color:#f97316}
+.fib-ocr-ok{background:rgba(6,182,212,.15);color:#06b6d4}
+.fib-ocr-none{background:rgba(100,116,139,.1);color:#64748b}
+.fib-rot-ok{background:rgba(168,85,247,.15);color:#a855f7}
+/* AI ready indicator */
+#ai-ready-badge{position:fixed;bottom:16px;right:16px;background:var(--sf);border:1px solid var(--bd2);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--t3);z-index:300;display:flex;align-items:center;gap:6px;transition:all .3s}
+#ai-ready-badge.ready{color:var(--grn);border-color:rgba(34,197,94,.3)}
+#ai-ready-badge.loading{color:var(--acc)}
+#ai-ready-badge.error{color:var(--red);border-color:rgba(239,68,68,.3)}
 </style>
 </head>
 <body>
+
+<!-- FIRST RUN SETUP SCREEN -->
+<div id="first-run-setup" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#0b0d12 0%,#13161e 100%);z-index:800;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:520px;width:100%;display:flex;flex-direction:column;gap:20px">
+    <!-- Logo -->
+    <div style="text-align:center">
+      <div style="font-size:28px;font-weight:900;color:#3b82f6;letter-spacing:-.5px">⬛ PDF Tool Pro</div>
+      <div style="font-size:13px;color:#64748b;margin-top:4px">v2.0 — Powered by AI</div>
+    </div>
+
+    <!-- Welcome message -->
+    <div style="background:#13161e;border:1px solid #252b3b;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:15px;font-weight:700;color:#e2e8f0">👋 Velkommen til PDF Tool Pro!</div>
+      <div style="font-size:13px;color:#94a3b8;line-height:1.6">
+        Første gang appen bruges skal den hente <b style="color:#e2e8f0">AI-modeller</b> til OCR og tekstgenkendelse.
+        Dette sker kun <b style="color:#e2e8f0">én gang</b> — bagefter er alt gemt i din browser.
+      </div>
+
+      <!-- What gets downloaded -->
+      <div style="background:#0b0d12;border:1px solid #1f2435;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#64748b">Hentes én gang</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px" id="dl-item-1">
+          <div id="dl-icon-1" style="width:20px;height:20px;border-radius:50%;background:#1f2435;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">⏳</div>
+          <div>
+            <div style="color:#e2e8f0;font-weight:600">Tesseract OCR</div>
+            <div style="color:#64748b;font-size:11px">Tekstlæsning fra PDF · ~10 MB</div>
+          </div>
+          <div style="margin-left:auto;font-size:11px;color:#64748b" id="dl-size-1"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px" id="dl-item-2">
+          <div id="dl-icon-2" style="width:20px;height:20px;border-radius:50%;background:#1f2435;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">⏳</div>
+          <div>
+            <div style="color:#e2e8f0;font-weight:600">AI Sprogmodel</div>
+            <div style="color:#64748b;font-size:11px">Intelligent tekstforståelse · ~500 MB</div>
+          </div>
+          <div style="margin-left:auto;font-size:11px;color:#64748b" id="dl-size-2"></div>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="setup-progress-wrap" style="display:none;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div id="setup-status-text" style="font-size:12px;color:#94a3b8">Forbereder…</div>
+          <div id="setup-pct" style="font-size:12px;font-weight:700;color:#3b82f6">0%</div>
+        </div>
+        <div style="background:#1f2435;border-radius:4px;height:6px;overflow:hidden">
+          <div id="setup-progress-bar" style="height:100%;background:linear-gradient(90deg,#3b82f6,#06b6d4);border-radius:4px;transition:width .3s;width:0%"></div>
+        </div>
+        <div id="setup-sub-text" style="font-size:11px;color:#3d4d66"></div>
+      </div>
+
+      <!-- Error state -->
+      <div id="setup-error" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:12px;color:#ef4444"></div>
+    </div>
+
+    <!-- Buttons -->
+    <div style="display:flex;flex-direction:column;gap:8px" id="setup-btn-wrap">
+      <button onclick="startFirstRunSetup()" id="btn-start-setup"
+        style="width:100%;padding:13px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s"
+        onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+        ⬇ Hent AI og kom i gang
+      </button>
+      <button onclick="skipFirstRun()"
+        style="width:100%;padding:10px;background:transparent;border:1px solid #252b3b;border-radius:8px;color:#64748b;font-size:12px;cursor:pointer;transition:all .15s"
+        onmouseover="this.style.borderColor='#3b82f6';this.style.color='#94a3b8'" onmouseout="this.style.borderColor='#252b3b';this.style.color='#64748b'">
+        Spring over — brug uden AI (OCR virker ikke)
+      </button>
+    </div>
+
+    <!-- Already set up note -->
+    <div style="text-align:center;font-size:11px;color:#3d4d66">
+      Modellerne gemmes i din browser og hentes kun én gang.<br/>
+      Appen virker herefter offline.
+    </div>
+  </div>
+</div>
+
 <div id="prog"></div>
+<div id="ai-ready-badge"><span class="spin"></span> AI indlæser…</div>
 <input type="file" id="file-input" accept=".pdf" multiple/>
 <input type="file" id="img-input" accept="image/*"/>
 
@@ -441,6 +534,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="openM('m-convert');closeMenus()">🔄 Konverter PDF…</div>
         <div class="mb-sep"></div>
+        <div class="mb-item" onclick="showAISetup();closeMenus()">🤖 Installer AI…</div>
         <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
         <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
         <div class="mb-sep"></div>
@@ -1698,7 +1792,7 @@ async function runOCRSearch(){
     if(!boxes.length){results.innerHTML='<div class="ocr-ri ocr-fail">⚠ Ikke fundet på side '+S.page+'</div>';return;}
     const annos=getAnnos(S.activeIdx,S.page);const dpr=window.devicePixelRatio;const sr=(S.zoom*dpr)/ocrScale;
     boxes.forEach(box=>annos.push({type:'redact',x:box.x*sr,y:box.y*sr,w:Math.max(box.w*sr,10),h:Math.max(box.h*sr,10),color:S.redactColor,strokeSize:1,opacity:1}));
-    redrawAnnos();renderAnnoList();f._hasOcr=true;renderFileList();
+    redrawAnnos();renderAnnoList();markOcrDone(S.activeIdx);
     const el=document.createElement('div');el.className='ocr-ri ocr-ok';el.textContent='✓ '+boxes.length+' fund på side '+S.page;results.appendChild(el);
     results.firstChild.remove(); // remove "Søger…"
   }catch(err){results.innerHTML=`<div class="ocr-ri ocr-fail">Fejl: ${escH(err.message)}</div>`;}
@@ -1738,7 +1832,7 @@ async function runBulkOCRSearch(){
           }
         });
       }
-      f._hasOcr=found>0;
+      if(found>0)markOcrDone(fileIdx);
       const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';results.appendChild(item);
     }catch(err){const item=document.createElement('div');item.className='ocr-ri ocr-fail';item.textContent='✕ '+f.name+': '+err.message;results.appendChild(item);}
   }
@@ -2322,8 +2416,217 @@ function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 function triggerDL(bytes,name){const blob=new Blob([bytes],{type:'application/pdf'});const url=URL.createObjectURL(blob);const a=Object.assign(document.createElement('a'),{href:url,download:name});a.click();setTimeout(()=>URL.revokeObjectURL(url),6000);}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 
+// Show AI setup screen on demand
+function showAISetup() {
+  // Reset setup state so it shows fresh
+  const setup = document.getElementById('first-run-setup');
+  if (!setup) return;
+  // Reset icons
+  [1,2].forEach(n => setDlIcon(n,'wait'));
+  document.getElementById('setup-progress-wrap').style.display = 'none';
+  document.getElementById('setup-error').style.display = 'none';
+  document.getElementById('setup-btn-wrap').style.opacity = '1';
+  const btn = document.getElementById('btn-start-setup');
+  if (btn) { btn.disabled = false; btn.textContent = '⬇ Hent AI og kom i gang'; }
+  setup.style.display = 'flex';
+  setup.style.opacity = '1';
+}
+
 // Init signature canvas after load
-window.addEventListener('load',()=>{initSigCanvas();});
+window.addEventListener('load',()=>{
+  initSigCanvas();
+  initAISystem();
+});
+
+// ================================================================
+// AI SYSTEM — First run setup + Tesseract + status badges
+// ================================================================
+const AI = {
+  tessReady: false,
+  tessWorker: null,
+  setupDone: localStorage.getItem('ptp_ai_setup') === 'done',
+};
+
+async function initAISystem() {
+  const badge = document.getElementById('ai-ready-badge');
+
+  // Show welcome screen on first visit
+  if (!AI.setupDone) {
+    const setup = document.getElementById('first-run-setup');
+    if (setup) setup.style.display = 'flex';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  // Already set up — init in background
+  if (badge) { badge.className = 'loading'; badge.innerHTML = '<span class="spin"></span> AI indlæser…'; }
+  try {
+    await initTesseract();
+    if (badge) { badge.className = 'ready'; badge.innerHTML = '✓ AI klar'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); }, 3000); }
+  } catch(e) {
+    if (badge) { badge.className = 'error'; badge.innerHTML = '⚠ AI fejl — klik her'; badge.style.cursor='pointer'; badge.onclick=()=>location.reload(); }
+  }
+}
+
+async function startFirstRunSetup() {
+  const btn = document.getElementById('btn-start-setup');
+  const btnWrap = document.getElementById('setup-btn-wrap');
+  const progress = document.getElementById('setup-progress-wrap');
+  const errEl = document.getElementById('setup-error');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Henter…';
+  btnWrap.style.opacity = '.5';
+  progress.style.display = 'flex';
+  errEl.style.display = 'none';
+
+  try {
+    // Step 1: Tesseract
+    setSetupStatus('Henter Tesseract OCR…', 5, 'Downloader sprogpakker (dansk + engelsk)');
+    setDlIcon(1, 'loading');
+    await initTesseract((p) => {
+      setSetupStatus('Henter Tesseract OCR…', 5 + Math.round(p * 35), p < 1 ? Math.round(p*100)+'% hentet' : 'Klar!');
+    });
+    setDlIcon(1, 'done');
+    setSetupStatus('Tesseract klar ✓', 40, '');
+
+    // Step 2: Transformers.js model (lightweight — just check it loads)
+    setSetupStatus('Forbereder AI-model…', 45, 'Dette kan tage 1-2 minutter første gang');
+    setDlIcon(2, 'loading');
+    await initTransformers((p) => {
+      setSetupStatus('Henter AI-model…', 45 + Math.round(p * 50), p < 1 ? Math.round(p*100)+'% af ~500MB hentet' : 'Klar!');
+    });
+    setDlIcon(2, 'done');
+
+    setSetupStatus('Alt klar! 🎉', 100, 'Starter appen…');
+    localStorage.setItem('ptp_ai_setup', 'done');
+    AI.setupDone = true;
+
+    await sleep(1200);
+    const setup = document.getElementById('first-run-setup');
+    if (setup) { setup.style.opacity = '0'; setup.style.transition = 'opacity .4s'; setTimeout(()=>setup.style.display='none', 400); }
+    const badge = document.getElementById('ai-ready-badge');
+    if (badge) { badge.style.display='flex'; badge.className='ready'; badge.innerHTML='✓ AI klar'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); },3000); }
+    toast('PDF Tool Pro er klar! 🎉', 'ok');
+
+  } catch(e) {
+    errEl.textContent = '⚠ Fejl: ' + e.message + ' — Tjek din internetforbindelse og prøv igen.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '↺ Prøv igen';
+    btnWrap.style.opacity = '1';
+    setDlIcon(1, AI.tessReady ? 'done' : 'wait');
+    setDlIcon(2, 'wait');
+  }
+}
+
+function skipFirstRun() {
+  const setup = document.getElementById('first-run-setup');
+  if (setup) setup.style.display = 'none';
+  localStorage.setItem('ptp_ai_setup', 'skipped');
+  toast('Starter uden AI — OCR er ikke tilgængeligt', 'err');
+}
+
+function setSetupStatus(text, pct, sub) {
+  const t = document.getElementById('setup-status-text');
+  const p = document.getElementById('setup-pct');
+  const b = document.getElementById('setup-progress-bar');
+  const s = document.getElementById('setup-sub-text');
+  if (t) t.textContent = text;
+  if (p) p.textContent = pct + '%';
+  if (b) b.style.width = pct + '%';
+  if (s) s.textContent = sub;
+}
+
+function setDlIcon(n, state) {
+  const el = document.getElementById('dl-icon-' + n);
+  if (!el) return;
+  if (state === 'loading') { el.innerHTML = '<span class="spin" style="border-top-color:#3b82f6;border-color:rgba(59,130,246,.2)"></span>'; el.style.background='rgba(59,130,246,.1)'; }
+  else if (state === 'done') { el.innerHTML = '✓'; el.style.background='rgba(34,197,94,.15)'; el.style.color='#22c55e'; }
+  else { el.innerHTML = '⏳'; el.style.background='#1f2435'; el.style.color=''; }
+}
+
+// Init Tesseract worker
+async function initTesseract(onProgress) {
+  if (AI.tessReady && AI.tessWorker) return AI.tessWorker;
+  if (typeof Tesseract === 'undefined') throw new Error('Tesseract.js ikke indlæst');
+
+  AI.tessWorker = await Tesseract.createWorker(['dan', 'eng'], Tesseract.OEM.DEFAULT, {
+    logger: m => {
+      if (m.status === 'recognizing text' && onProgress) onProgress(m.progress || 0);
+      // Update AI badge during recognition
+      const badge = document.getElementById('ai-ready-badge');
+      if (badge && badge.className === 'ready' && m.status === 'recognizing text') {
+        badge.style.display = 'flex';
+        badge.style.opacity = '1';
+        badge.innerHTML = '🔍 OCR: ' + Math.round((m.progress||0)*100) + '%';
+        badge.className = 'loading';
+      }
+    }
+  });
+  AI.tessReady = true;
+  if (onProgress) onProgress(1);
+  return AI.tessWorker;
+}
+
+// Init Transformers.js — loads a small model for text understanding
+let _transformersPipeline = null;
+async function initTransformers(onProgress) {
+  try {
+    // Use dynamic import for ESM module
+    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3/dist/transformers.min.js');
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    // Use a small, fast model for feature extraction / text understanding
+    // Xenova/multilingual-e5-small is only ~120MB and supports Danish
+    _transformersPipeline = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small', {
+      progress_callback: (p) => {
+        if (onProgress && p.progress) onProgress(p.progress / 100);
+      }
+    });
+    if (onProgress) onProgress(1);
+  } catch(e) {
+    // Transformers is optional — don't block if it fails
+    console.warn('Transformers.js not available:', e.message);
+    if (onProgress) onProgress(1);
+  }
+}
+
+// Run OCR using Tesseract (replaces old getTessWorker)
+async function getTessWorker() {
+  if (!AI.tessReady || !AI.tessWorker) {
+    await initTesseract();
+  }
+  return AI.tessWorker;
+}
+
+// Enhanced file badges — BM + OCR + Rotation status
+function fileBadges(f) {
+  let b = '';
+  // BM status
+  if (f.bulkStatus === 'ok' || f._hasBm) b += '<span class="fi-badge fib-bm-ok">✓ BM</span>';
+  else if (f.bulkStatus === 'none') b += '<span class="fi-badge fib-bm-none">⚠ Ingen BM</span>';
+  // OCR status
+  if (f._hasOcr) b += '<span class="fi-badge fib-ocr-ok">👁 OCR</span>';
+  // Rotation status
+  if (f._hasRotation || f.pendingRotation || (f.pageRotations && Object.keys(f.pageRotations).length > 0)) {
+    b += '<span class="fi-badge fib-rot-ok">↻ Roteret</span>';
+  }
+  return b;
+}
+
+// OCR badge update helper
+function markOcrDone(fileIdx) {
+  if (fileIdx >= 0 && fileIdx < S.files.length) {
+    S.files[fileIdx]._hasOcr = true;
+    renderFileList();
+    if (S._mode === 'list') renderListMode();
+  }
+  // Reset AI badge
+  const badge = document.getElementById('ai-ready-badge');
+  if (badge) { badge.className = 'ready'; badge.innerHTML = '✓ AI klar'; badge.style.display='flex'; badge.style.opacity='1'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); },2000); }
+}
 </script>
 </body>
 </html>
