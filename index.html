@@ -299,7 +299,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #toast.err{border-color:var(--red);color:var(--red)}
 #toast.ok{border-color:var(--grn);color:var(--grn)}
 #prog{position:fixed;top:0;left:0;height:2px;background:var(--acc);width:0;transition:width .25s;z-index:9999}
-#file-input{opacity:0;position:fixed;top:-100px;left:-100px;width:1px;height:1px}#img-input{opacity:0;position:fixed;top:-100px;left:-100px;width:1px;height:1px}
+#file-input{display:none}#img-input{display:none}
 
 /* API setup CSS removed */
 
@@ -441,10 +441,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="topbar">
   <div class="logo">⬛ PDF Tool Pro<sub>v2.0</sub></div>
   <div class="vsep"></div>
-  <label class="btn bPri bSm" style="cursor:pointer" title="Tilføj PDF-filer">
-    + PDF
-    <input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>
-  </label>
+  <button class="btn bPri bSm" onclick="triggerFile()">+ PDF</button>
   <div class="vsep"></div>
   <button class="mode-btn active" id="btn-pm" onclick="setMode('preview')">⊞ Preview</button>
   <button class="mode-btn" id="btn-lm" onclick="setMode('list')">≡ Liste</button>
@@ -614,10 +611,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
           <div class="ei">📑</div>
           <p>Tilføj PDF-filer</p>
           <p style="font-size:11px;color:var(--t4);margin-top:4px">Træk & slip eller klik + PDF</p>
-          <label class="btn bPri" style="margin-top:8px;cursor:pointer">
-            + Tilføj PDF
-            <input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>
-          </label>
+          <button class="btn bPri" onclick="triggerFile()" style="margin-top:8px">+ Tilføj PDF</button>
         </div>
       </div>
 
@@ -1059,6 +1053,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
      ============================================================ -->
 <script>
 // ================================================================
+// GLOBAL ERROR CATCHER — catches JS errors before they kill the app
+// ================================================================
+window.onerror = function(msg, src, line, col, err) {
+  document.body.insertAdjacentHTML('beforeend',
+    '<div style="position:fixed;bottom:60px;left:10px;right:10px;background:#ef4444;color:#fff;padding:10px;border-radius:8px;font-size:11px;z-index:9999;font-family:monospace;word-break:break-all">' +
+    '❌ JS FEJL linje '+line+': '+msg+'</div>');
+  return false;
+};
+
+// ================================================================
 // GOOGLE FONTS for signature
 // ================================================================
 (function(){
@@ -1207,66 +1211,14 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-// Drag & drop — block Chrome PDF viewer using capture phase
-(function setupDrop(){
-  const overlay = document.getElementById('drop-overlay');
-  let dragDepth = 0;
-
-  // Capture phase intercepts BEFORE browser default PDF handling
-  window.addEventListener('dragenter', function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth++;
-    overlay.style.display = 'block';
-    overlay.style.pointerEvents = 'all';
-  }, {capture: true, passive: false});
-
-  window.addEventListener('dragover', function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-  }, {capture: true, passive: false});
-
-  window.addEventListener('dragleave', function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth--;
-    if (dragDepth <= 0) {
-      dragDepth = 0;
-      overlay.style.display = 'none';
-      overlay.style.pointerEvents = 'none';
-    }
-  }, {capture: true, passive: false});
-
-  window.addEventListener('drop', async function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth = 0;
-    overlay.style.display = 'none';
-    overlay.style.pointerEvents = 'none';
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-    if (files.length) {
-      await handleFiles(files);
-    } else if (e.dataTransfer.files.length) {
-      toast('Kun PDF-filer understøttes', true);
-    }
-  }, {capture: true, passive: false});
-})();
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',async e=>{
+  e.preventDefault();
+  await handleFiles(Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf')));
+});
 
 // Also fix file input — ensure it works cross-browser
-// handleFilesFromInput — called from label>input onchange
-async function handleFilesFromInput(inp){
-  const files=Array.from(inp.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
-  inp.value=''; // reset for re-select
-  if(files.length) await handleFiles(files);
-  else if(inp.files.length) toast('Kun PDF-filer understøttes',true);
-}
-// triggerFile kept for compatibility
-function triggerFile(){
-  // Find first file input in a label and click it
-  const lbl=document.querySelector('label .btn-file-inp, label input[type=file]');
-  if(lbl) lbl.click();
-}
+function triggerFile(){document.getElementById('file-input').click();}
 
 async function handleFiles(newFiles){
   for(const f of newFiles){
