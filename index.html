@@ -329,6 +329,62 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #te-edit-bar.active{display:flex}
 #te-edit-info{flex:1;color:var(--t3);font-size:10px}
 
+
+/* MuPDF status */
+#mupdf-badge{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 8px;
+  border-radius:12px;font-size:10px;font-weight:700;
+  background:var(--sf2);border:1px solid var(--bd);color:var(--t3);
+  transition:all .3s;
+}
+#mupdf-badge.loading{color:var(--acc);border-color:rgba(59,130,246,.3)}
+#mupdf-badge.ready{color:var(--grn);border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.05)}
+#mupdf-badge.error{color:var(--amb);border-color:rgba(245,158,11,.3)}
+
+/* MuPDF text edit overlay */
+#mupdf-overlay{position:absolute;top:0;left:0;pointer-events:none;z-index:45}
+.mupdf-block{
+  position:absolute;cursor:text;pointer-events:all;
+  border:1px solid transparent;border-radius:2px;
+  transition:border-color .1s,background .1s;
+  box-sizing:border-box;overflow:hidden;
+}
+.mupdf-block:hover{
+  border-color:rgba(59,130,246,.5);
+  background:rgba(59,130,246,.05);
+}
+.mupdf-block.selected{
+  border-color:var(--acc);
+  background:rgba(59,130,246,.08);
+  z-index:50;
+}
+.mupdf-block textarea{
+  position:absolute;inset:0;width:100%;height:100%;
+  background:transparent;border:none;outline:none;
+  resize:none;overflow:hidden;
+  font-family:inherit;color:inherit;
+  padding:0;margin:0;
+  cursor:text;
+  caret-color:var(--acc);
+}
+.mupdf-block.editing{
+  background:rgba(255,255,255,.97);
+  border:2px solid var(--acc);
+  z-index:60;
+  box-shadow:0 2px 16px rgba(59,130,246,.3);
+}
+.mupdf-block.editing textarea{
+  color:#111;
+}
+.mupdf-block.modified{
+  border-color:rgba(234,179,8,.6);
+  background:rgba(234,179,8,.08);
+}
+.mupdf-block.deleted{
+  opacity:0.3;text-decoration:line-through;
+  pointer-events:none;
+}
+
 /* ── MISC ── */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--sf3);border:1px solid var(--bd2);color:var(--t1);padding:8px 18px;border-radius:18px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:999}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -475,7 +531,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="app">
 <!-- TOPBAR -->
 <div id="topbar">
-  <div class="logo">⬛ PDF Tool Pro<sub>v2.0</sub></div>
+  <div class="logo">⬛ PDF Tool Pro<sub>v2.1</sub></div>
+  <div id="mupdf-badge"><span class="spin" style="width:8px;height:8px;border-width:1.5px"></span> MuPDF</div>
   <div class="vsep"></div>
   <label class="btn bPri bSm" style="cursor:pointer"><input type="file" id="file-input-topbar" accept=".pdf" multiple style="display:none"/>+ PDF</label>
   <div class="vsep"></div>
@@ -649,6 +706,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
           <canvas id="anno-canvas" style="position:absolute;top:0;left:0;cursor:crosshair"></canvas>
           <div id="txt-overlay" style="position:absolute;top:0;left:0;pointer-events:none"></div>
           <div id="search-overlay" style="position:absolute;top:0;left:0;pointer-events:none"></div>
+          <div id="mupdf-overlay"></div>
         </div>
         <div id="empty-st">
           <div class="ei">📑</div>
@@ -3223,6 +3281,610 @@ function markOcrDone(fileIdx) {
   // Reset AI badge
   const badge = document.getElementById('ai-ready-badge');
   if (badge) { badge.className = 'ready'; badge.innerHTML = '✓ AI klar'; badge.style.display='flex'; badge.style.opacity='1'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>badge.style.display='none',500); },2000); }
+}
+
+
+// ================================================================
+// MUPDF WASM — Web Worker via Blob URL
+// The worker is defined as a string and converted to a Blob
+// so no separate worker file is needed (single HTML file)
+// ================================================================
+
+const MUPDF_VERSION = '1.3.1';
+const MUPDF_JS_URL = `https://unpkg.com/mupdf@${MUPDF_VERSION}/dist/mupdf.js`;
+const MUPDF_WASM_URL = `https://unpkg.com/mupdf@${MUPDF_VERSION}/dist/mupdf.wasm`;
+
+// Worker source as a string — will be turned into a Blob
+const WORKER_SRC = `
+// MuPDF Web Worker
+// Runs in background thread — communicates via postMessage
+
+let mupdf = null;
+let doc = null;
+let docBuf = null;
+
+// Load MuPDF WASM
+async function initMuPDF() {
+  try {
+    // Import mupdf as ESM from unpkg
+    const mod = await import("https://unpkg.com/mupdf@1.3.1/dist/mupdf.js");
+    mupdf = mod.default || mod;
+    // If mupdf needs explicit init
+    if (mupdf.ready) await mupdf.ready;
+    self.postMessage({type:'ready'});
+  } catch(e) {
+    self.postMessage({type:'error', msg: 'MuPDF load failed: ' + e.message});
+  }
+}
+
+// Handle messages from main thread
+self.onmessage = async function(e) {
+  const {id, cmd, data} = e.data;
+  try {
+    switch(cmd) {
+      case 'init':
+        await initMuPDF();
+        break;
+
+      case 'loadDoc': {
+        // data = ArrayBuffer of PDF
+        docBuf = data;
+        doc = mupdf.Document.openDocument(data, 'application/pdf');
+        const pageCount = doc.countPages();
+        self.postMessage({id, type:'result', result: {pageCount}});
+        break;
+      }
+
+      case 'getPageBlocks': {
+        // Returns text blocks with bounding boxes for a page
+        const {pageNum, scale} = data;
+        const page = doc.loadPage(pageNum - 1);
+        const blocks = [];
+
+        // Get structured text
+        const stext = page.toStructuredText('preserve-whitespace');
+        const json = JSON.parse(stext.asJSON());
+
+        // json.blocks -> array of blocks with lines
+        (json.blocks || []).forEach((block, bi) => {
+          if (block.type !== 'text') return;
+          (block.lines || []).forEach((line, li) => {
+            const spans = line.spans || [];
+            if (!spans.length) return;
+
+            // Combine all spans in a line into one editable block
+            const text = spans.map(s => s.text || '').join('');
+            if (!text.trim()) return;
+
+            // Get bounding box from first and last span
+            const firstSpan = spans[0];
+            const lastSpan = spans[spans.length - 1];
+
+            // bbox is [x0,y0,x1,y1]
+            const bbox = [
+              Math.min(...spans.map(s => s.bbox ? s.bbox[0] : 0)),
+              Math.min(...spans.map(s => s.bbox ? s.bbox[1] : 0)),
+              Math.max(...spans.map(s => s.bbox ? s.bbox[2] : 0)),
+              Math.max(...spans.map(s => s.bbox ? s.bbox[3] : 0)),
+            ];
+
+            const fontSize = firstSpan.size || 12;
+            const fontName = (firstSpan.font && firstSpan.font.name) || 'Helvetica';
+            const color = firstSpan.color || 0; // RGB as integer
+
+            blocks.push({
+              id: bi + '_' + li,
+              text,
+              origText: text,
+              bbox,   // PDF coordinates
+              fontSize,
+              fontName,
+              color,
+              lineDir: line.dir || [1, 0],
+            });
+          });
+        });
+
+        const pageBounds = page.getBounds();
+        self.postMessage({id, type:'result', result: {blocks, pageBounds}});
+        break;
+      }
+
+      case 'saveWithEdits': {
+        // data.edits = [{id, origText, newText, bbox, fontSize, fontName, color, pageNum}]
+        const {edits, pageNum} = data;
+        if (!edits || !edits.length) {
+          // No edits — return original
+          const bytes = doc.saveToBuffer('incremental');
+          self.postMessage({id, type:'result', result: bytes.asUint8Array()}, []);
+          break;
+        }
+
+        // We need to use pdf.js approach: use a PDFDocument
+        // MuPDF can redact and replace text
+        const page = doc.loadPage(pageNum - 1);
+
+        for (const edit of edits) {
+          if (edit.newText === edit.origText && !edit.deleted) continue;
+
+          const [x0, y0, x1, y1] = edit.bbox;
+
+          // Redact the original text area (white it out)
+          const redact = page.addRedactAnnotation(
+            [x0 - 1, y0 - 1, x1 + 1, y1 + 1],
+            [1, 1, 1] // white fill
+          );
+          page.applyRedactions(false, 2); // 2 = white fill
+
+          if (!edit.deleted && edit.newText.trim()) {
+            // Add new text annotation or FreeText
+            // Use a text stamp to overlay new text
+            const fontSize = edit.fontSize || 12;
+            const r = ((edit.color >> 16) & 0xFF) / 255;
+            const g = ((edit.color >> 8) & 0xFF) / 255;
+            const b = (edit.color & 0xFF) / 255;
+
+            // Draw new text using drawDevice
+            // MuPDF.js can write text via annotation
+            const annot = page.addFreeTextAnnotation(
+              [x0, y0, x1 + 200, y1 + 4],
+              edit.newText,
+              fontSize,
+              [r, g, b],
+              edit.fontName || 'Helvetica'
+            );
+          }
+        }
+
+        const bytes = doc.saveToBuffer('');
+        const arr = bytes.asUint8Array();
+        self.postMessage({id, type:'result', result: arr.buffer}, [arr.buffer]);
+        break;
+      }
+
+      default:
+        self.postMessage({id, type:'error', msg:'Unknown command: ' + cmd});
+    }
+  } catch(e) {
+    self.postMessage({id, type:'error', msg: cmd + ' failed: ' + e.message + '\\n' + e.stack});
+  }
+};
+
+// Auto-init
+initMuPDF();
+`;
+
+// ================================================================
+// Main thread MuPDF manager
+// ================================================================
+const MuPDF = {
+  worker: null,
+  ready: false,
+  loading: false,
+  pendingCalls: new Map(),
+  _nextId: 1,
+
+  async init() {
+    if (this.ready || this.loading) return;
+    this.loading = true;
+    this._setBadge('loading', 'MuPDF indlæser…');
+
+    try {
+      // Create worker from blob — no separate file needed
+      const blob = new Blob([WORKER_SRC], {type: 'application/javascript'});
+      const workerUrl = URL.createObjectURL(blob);
+      this.worker = new Worker(workerUrl, {type: 'module'});
+
+      this.worker.onmessage = (e) => this._handleMessage(e);
+      this.worker.onerror = (e) => {
+        console.error('MuPDF worker error:', e);
+        this._setBadge('error', '⚠ MuPDF fejl');
+        this.loading = false;
+      };
+
+      // Wait for ready
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('MuPDF timeout')), 30000);
+        const orig = this.worker.onmessage;
+        this.worker.onmessage = (e) => {
+          if (e.data.type === 'ready') {
+            clearTimeout(timeout);
+            this.ready = true;
+            this.loading = false;
+            this._setBadge('ready', '✓ MuPDF klar');
+            this.worker.onmessage = (ev) => this._handleMessage(ev);
+            resolve();
+          } else if (e.data.type === 'error') {
+            clearTimeout(timeout);
+            this._setBadge('error', '⚠ ' + e.data.msg.substring(0, 30));
+            reject(new Error(e.data.msg));
+          }
+        };
+      });
+
+    } catch(e) {
+      this.loading = false;
+      this._setBadge('error', '⚠ MuPDF fejl');
+      console.error('MuPDF init failed:', e);
+      toast('MuPDF: ' + e.message, true);
+    }
+  },
+
+  _handleMessage(e) {
+    const {id, type, result, msg} = e.data;
+    if (!id) return;
+    const cb = this.pendingCalls.get(id);
+    if (!cb) return;
+    this.pendingCalls.delete(id);
+    if (type === 'error') cb.reject(new Error(msg));
+    else cb.resolve(result);
+  },
+
+  _call(cmd, data, transfer) {
+    return new Promise((resolve, reject) => {
+      const id = this._nextId++;
+      this.pendingCalls.set(id, {resolve, reject});
+      if (transfer) {
+        this.worker.postMessage({id, cmd, data}, transfer);
+      } else {
+        this.worker.postMessage({id, cmd, data});
+      }
+    });
+  },
+
+  _setBadge(state, text) {
+    const badge = document.getElementById('mupdf-badge');
+    if (!badge) return;
+    badge.className = state;
+    badge.innerHTML = state === 'loading'
+      ? '<span class="spin" style="width:8px;height:8px;border-width:1.5px"></span> ' + text
+      : text;
+  },
+
+  async loadDoc(buf) {
+    if (!this.ready) throw new Error('MuPDF ikke klar');
+    const copy = buf.slice(0);
+    return await this._call('loadDoc', copy, [copy]);
+  },
+
+  async getPageBlocks(pageNum, scale) {
+    if (!this.ready) throw new Error('MuPDF ikke klar');
+    return await this._call('getPageBlocks', {pageNum, scale});
+  },
+
+  async saveWithEdits(edits, pageNum) {
+    if (!this.ready) throw new Error('MuPDF ikke klar');
+    return await this._call('saveWithEdits', {edits, pageNum});
+  },
+};
+
+// ================================================================
+// MuPDF Text Editor — UI layer
+// ================================================================
+const MuEditor = {
+  active: false,
+  blocks: [],       // current page blocks
+  pageBounds: null,
+  fileIdx: -1,
+  page: -1,
+  scale: 1,
+
+  async activate() {
+    if (S.activeIdx < 0) { toast('Åbn en PDF først', true); return; }
+
+    // Init MuPDF if not ready
+    if (!MuPDF.ready && !MuPDF.loading) {
+      toast('Indlæser MuPDF (~10MB første gang)…');
+      await MuPDF.init();
+    }
+
+    if (!MuPDF.ready) {
+      toast('Venter på MuPDF…', true);
+      return;
+    }
+
+    this.active = true;
+    document.getElementById('te-edit-bar').classList.add('active');
+    document.getElementById('tb-textedit').style.background = 'rgba(59,130,246,.2)';
+    document.getElementById('tb-textedit').style.color = 'var(--acc)';
+
+    await this.loadPage();
+  },
+
+  deactivate() {
+    this.active = false;
+    this.blocks = [];
+    document.getElementById('te-edit-bar').classList.remove('active');
+    const btn = document.getElementById('tb-textedit');
+    if (btn) { btn.style.background = ''; btn.style.color = ''; }
+    this._clearOverlay();
+  },
+
+  async loadPage() {
+    if (!this.active || S.activeIdx < 0) return;
+    const f = S.files[S.activeIdx];
+    this.fileIdx = S.activeIdx;
+    this.page = S.page;
+    this._clearOverlay();
+
+    document.getElementById('te-edit-info').textContent = 'MuPDF analyserer side…';
+
+    try {
+      // Load doc into MuPDF worker if not already
+      const result = await MuPDF.loadDoc(f.buf);
+
+      // Get text blocks for this page
+      const {blocks, pageBounds} = await MuPDF.getPageBlocks(S.page, S.zoom);
+      this.blocks = blocks;
+      this.pageBounds = pageBounds;
+      this._renderBlocks();
+
+      const count = blocks.length;
+      document.getElementById('te-edit-info').textContent =
+        count + ' tekstelementer — klik for at redigere';
+
+    } catch(e) {
+      document.getElementById('te-edit-info').textContent = '⚠ ' + e.message;
+      toast('MuPDF fejl: ' + e.message, true);
+    }
+  },
+
+  _clearOverlay() {
+    const ov = document.getElementById('mupdf-overlay');
+    if (ov) ov.innerHTML = '';
+  },
+
+  _renderBlocks() {
+    const ov = document.getElementById('mupdf-overlay');
+    if (!ov) return;
+    ov.innerHTML = '';
+
+    const cv = document.getElementById('pdf-canvas');
+    const dpr = window.devicePixelRatio;
+    const canvasW = cv.width / dpr;
+    const canvasH = cv.height / dpr;
+
+    // pageBounds = [x0, y0, x1, y1] in PDF points
+    const pb = this.pageBounds;
+    const pdfW = pb[2] - pb[0];
+    const pdfH = pb[3] - pb[1];
+
+    // Scale factors: PDF coords -> canvas CSS pixels
+    const scX = canvasW / pdfW;
+    const scY = canvasH / pdfH;
+
+    this.blocks.forEach((block, i) => {
+      const [bx0, by0, bx1, by1] = block.bbox;
+
+      // PDF Y is from bottom, canvas Y from top
+      const left = bx0 * scX;
+      const top = (pdfH - by1) * scY;
+      const width = (bx1 - bx0) * scX;
+      const height = (by1 - by0) * scY;
+      const fontSize = block.fontSize * scY * 0.85;
+
+      // Color from PDF integer
+      const r = (block.color >> 16) & 0xFF;
+      const g = (block.color >> 8) & 0xFF;
+      const b = block.color & 0xFF;
+      const colorStr = `rgb(${r},${g},${b})`;
+
+      const div = document.createElement('div');
+      div.className = 'mupdf-block' + (block.modified ? ' modified' : '') + (block.deleted ? ' deleted' : '');
+      div.style.cssText = `left:${left}px;top:${top}px;width:${Math.max(width,20)}px;height:${Math.max(height,12)}px;`;
+      div.dataset.blockIdx = i;
+      div.title = block.origText.substring(0, 50);
+
+      // Show text as a visible overlay
+      const span = document.createElement('span');
+      span.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;font-size:${Math.max(6,fontSize)}px;color:transparent;white-space:nowrap;overflow:hidden;padding:0 1px;font-family:${block.fontName || 'serif'};`;
+      span.textContent = block.text;
+      div.appendChild(span);
+
+      // Click to edit
+      div.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._startEdit(div, block, i, left, top, width, height, fontSize, colorStr);
+      });
+
+      ov.appendChild(div);
+      block._el = div;
+    });
+
+    ov.style.pointerEvents = 'all';
+  },
+
+  _startEdit(div, block, idx, left, top, width, height, fontSize, colorStr) {
+    // Remove any existing edit
+    document.querySelectorAll('.mupdf-block.editing').forEach(el => {
+      if (el !== div) this._finishEdit(el);
+    });
+
+    div.classList.add('editing', 'selected');
+    div.innerHTML = '';
+
+    const ta = document.createElement('textarea');
+    ta.value = block.text;
+    ta.style.cssText = `font-size:${Math.max(6,fontSize)}px;font-family:${block.fontName || 'serif'};color:#111;line-height:1.2;`;
+    ta.rows = 1;
+
+    ta.addEventListener('input', () => {
+      // Auto-expand width if text is longer
+      const approxW = ta.value.length * fontSize * 0.55;
+      if (approxW > width) {
+        div.style.width = Math.min(approxW + 20, 600) + 'px';
+      }
+    });
+
+    ta.addEventListener('blur', () => {
+      block.text = ta.value;
+      block.modified = (ta.value !== block.origText);
+      this._finishEdit(div, block);
+      this._updateEditCount();
+    });
+
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        block.text = block.origText;
+        block.modified = false;
+        this._finishEdit(div, block);
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        ta.blur();
+      }
+    });
+
+    // Double-click = delete
+    ta.addEventListener('dblclick', () => {
+      if (confirm('Slet dette tekstelement?')) {
+        block.deleted = true;
+        div.classList.add('deleted');
+        div.classList.remove('editing');
+        div.innerHTML = '<span style="text-decoration:line-through;color:var(--red);font-size:9px">SLETTET</span>';
+        this._updateEditCount();
+      }
+    });
+
+    div.appendChild(ta);
+    ta.focus();
+    ta.select();
+
+    document.getElementById('te-edit-info').textContent =
+      'Redigerer: "' + block.origText.substring(0, 30) + '" — Enter=gem, Esc=fortryd, Dbl-klik=slet';
+  },
+
+  _finishEdit(div, block) {
+    if (!div.classList.contains('editing')) return;
+    div.classList.remove('editing', 'selected');
+    div.innerHTML = '';
+
+    if (block && block.deleted) {
+      div.classList.add('deleted');
+      div.innerHTML = '<span style="text-decoration:line-through;color:var(--red);font-size:9px">SLETTET</span>';
+      return;
+    }
+
+    // Re-render the span
+    const span = document.createElement('span');
+    span.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;color:transparent;white-space:nowrap;overflow:hidden;padding:0 1px;';
+    span.textContent = block ? block.text : '';
+    div.appendChild(span);
+
+    if (block && block.modified) div.classList.add('modified');
+    else div.classList.remove('modified');
+  },
+
+  _updateEditCount() {
+    const mods = this.blocks.filter(b => b.modified || b.deleted).length;
+    document.getElementById('te-edit-info').textContent =
+      mods > 0
+        ? mods + ' ændring(er) — gemmes ved download'
+        : this.blocks.length + ' tekstelementer — klik for at redigere';
+  },
+
+  getModifiedBlocks() {
+    return this.blocks.filter(b => b.modified || b.deleted).map(b => ({
+      id: b.id,
+      origText: b.origText,
+      newText: b.text,
+      deleted: b.deleted || false,
+      bbox: b.bbox,
+      fontSize: b.fontSize,
+      fontName: b.fontName,
+      color: b.color,
+    }));
+  },
+
+  undoAll() {
+    this.blocks.forEach(b => {
+      b.text = b.origText;
+      b.modified = false;
+      b.deleted = false;
+    });
+    this._renderBlocks();
+    document.getElementById('te-edit-info').textContent = 'Alle ændringer nulstillet';
+    toast('Nulstillet ✓', 'ok');
+  },
+};
+
+// Override toggleTextEdit to use MuEditor
+async function toggleTextEdit() {
+  if (MuEditor.active) {
+    MuEditor.deactivate();
+  } else {
+    await MuEditor.activate();
+  }
+}
+
+// Override extractText to use MuEditor
+async function extractText() {
+  await MuEditor.activate();
+  switchRT('te');
+  const wrap = document.getElementById('te-blocks');
+  wrap.innerHTML = '<div style="padding:8px;font-size:11px;color:var(--acc)">✓ MuPDF tekst-redigering aktiv — klik direkte i dokumentet</div>';
+}
+
+// Override teUndoAll
+function teUndoAll() { MuEditor.undoAll(); }
+
+// Override teShowModified
+function teShowModified() {
+  const mods = MuEditor.getModifiedBlocks();
+  if (!mods.length) { toast('Ingen ændringer', true); return; }
+  const lines = mods.map(m =>
+    m.deleted ? 'SLET: "' + m.origText + '"' : '"' + m.origText + '" → "' + m.newText + '"'
+  ).join('\n');
+  alert(mods.length + ' ændring(er):\n\n' + lines);
+}
+
+// Hook into page changes
+const _origChangePage = changePage;
+function changePage(d) {
+  _origChangePage(d);
+  if (MuEditor.active) setTimeout(() => MuEditor.loadPage(), 400);
+}
+
+// Hook into download — bake MuPDF edits
+const _origDownloadFilePDF = downloadFilePDF;
+async function downloadFilePDF(fileIdx) {
+  // If MuEditor has changes for this file, save via MuPDF
+  if (MuEditor.active && MuEditor.fileIdx === fileIdx && MuEditor.getModifiedBlocks().length > 0) {
+    const btn = document.getElementById('tb-save');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    try {
+      toast('MuPDF gemmer ændringer…');
+      const edits = MuEditor.getModifiedBlocks();
+      const resultBuf = await MuPDF.saveWithEdits(edits, MuEditor.page);
+      const blob = new Blob([resultBuf], {type: 'application/pdf'});
+      const url = URL.createObjectURL(blob);
+      const f = S.files[fileIdx];
+      const a = Object.assign(document.createElement('a'), {
+        href: url,
+        download: (S.customFn || f.name.replace(/\.pdf$/i,'')) + '.pdf'
+      });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 6000);
+      toast('Download ✓', 'ok');
+    } catch(e) {
+      toast('MuPDF save fejl: ' + e.message, true);
+      await _origDownloadFilePDF(fileIdx);
+    }
+    const btn2 = document.getElementById('tb-save');
+    if (btn2) { btn2.disabled = false; btn2.innerHTML = '⬇ Download'; }
+  } else {
+    await _origDownloadFilePDF(fileIdx);
+  }
+}
+
+// Start loading MuPDF in background when first PDF is loaded
+const _origHandleFiles = handleFiles;
+async function handleFiles(files) {
+  await _origHandleFiles(files);
+  // Start MuPDF init in background after files loaded
+  if (!MuPDF.ready && !MuPDF.loading) {
+    setTimeout(() => MuPDF.init(), 1000);
+  }
 }
 
 // Wire up label file inputs
