@@ -299,7 +299,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #toast.err{border-color:var(--red);color:var(--red)}
 #toast.ok{border-color:var(--grn);color:var(--grn)}
 #prog{position:fixed;top:0;left:0;height:2px;background:var(--acc);width:0;transition:width .25s;z-index:9999}
-#file-input{display:none}#img-input{display:none}
+#file-input{opacity:0;position:fixed;top:-100px;left:-100px;width:1px;height:1px}#img-input{opacity:0;position:fixed;top:-100px;left:-100px;width:1px;height:1px}
 
 /* API setup CSS removed */
 
@@ -1239,8 +1239,19 @@ document.getElementById('file-input').addEventListener('change',async e=>{await 
 
 // Also fix file input — ensure it works cross-browser
 function triggerFile(){
-  const inp=document.getElementById('file-input');
-  inp.value=''; // reset so same file can be re-selected
+  // Create fresh input each time to avoid browser security restrictions
+  const inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='.pdf';
+  inp.multiple=true;
+  inp.style.cssText='opacity:0;position:fixed;top:-100px;left:-100px;width:1px;height:1px';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', async e=>{
+    const files=Array.from(e.target.files);
+    document.body.removeChild(inp);
+    if(files.length) await handleFiles(files);
+  });
+  inp.addEventListener('cancel', ()=>{ try{document.body.removeChild(inp);}catch{} });
   inp.click();
 }
 
