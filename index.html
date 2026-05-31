@@ -399,6 +399,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   </div>
 </div>
 
+
+<!-- FULL PAGE DROP OVERLAY — catches all drops before browser -->
+<div id="drop-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(59,130,246,.15);border:4px dashed var(--acc);pointer-events:none">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#fff">
+    <div style="font-size:48px">📑</div>
+    <div style="font-size:20px;font-weight:700;margin-top:8px">Slip PDF-filer her</div>
+  </div>
+</div>
 <div id="prog"></div>
 <div id="ai-ready-badge"><span class="spin"></span> AI indlæser…</div>
 <input type="file" id="file-input" accept=".pdf" multiple/>
@@ -1193,22 +1201,45 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-// Drag & drop — block at window level to prevent browser opening file in new tab
-['dragenter','dragover','dragleave','drop'].forEach(evt=>{
-  window.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();},{capture:true});
-});
-window.addEventListener('dragenter',e=>{document.getElementById('cv-container').classList.add('drag-over');},{capture:true});
-window.addEventListener('dragleave',e=>{
-  // Only remove highlight if leaving the window entirely
-  if(e.clientX===0&&e.clientY===0||e.relatedTarget===null)
-    document.getElementById('cv-container').classList.remove('drag-over');
-},{capture:true});
-window.addEventListener('drop',async e=>{
-  document.getElementById('cv-container').classList.remove('drag-over');
-  const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
-  if(files.length){await handleFiles(files);}
-  else if(e.dataTransfer.files.length){toast('Kun PDF-filer understøttes',true);}
-},{capture:true});
+// Drag & drop — use pointer-events overlay technique to block browser PDF viewer
+(function setupDrop(){
+  const overlay=document.getElementById('drop-overlay');
+  let dragCount=0;
+
+  // Show overlay on any drag enter — overlay itself catches the drop
+  document.addEventListener('dragenter',function(e){
+    e.preventDefault();
+    dragCount++;
+    overlay.style.display='block';
+    overlay.style.pointerEvents='all';
+  },false);
+
+  document.addEventListener('dragleave',function(e){
+    dragCount--;
+    if(dragCount<=0){dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';}
+  },false);
+
+  document.addEventListener('dragover',function(e){
+    e.preventDefault();
+    e.dataTransfer.dropEffect='copy';
+  },false);
+
+  // Catch drop on overlay — file never reaches browser
+  overlay.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy';},false);
+  overlay.addEventListener('drop',async function(e){
+    e.preventDefault();e.stopPropagation();
+    dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';
+    const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+    if(files.length){await handleFiles(files);}
+    else if(e.dataTransfer.files.length){toast('Kun PDF-filer understøttes',true);}
+  },false);
+
+  // Also catch on document as backup
+  document.addEventListener('drop',function(e){
+    e.preventDefault();e.stopPropagation();
+    dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';
+  },false);
+})();
 
 // Also fix file input — ensure it works cross-browser
 function triggerFile(){
