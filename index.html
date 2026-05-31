@@ -707,7 +707,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">🔍 OCR Overstrekning</div>
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
           <span style="font-size:10px;color:var(--t3)">Farve:</span>
-          <div class="redact-cp sel" style="background:#000000" onclick="setRedactColor('#000000',this)"></div>
+          <div class="redact-cp" style="background:#000000" onclick="setRedactColor('#000000',this)"></div>
+          <div class="redact-cp sel" style="background:#eab308" onclick="setRedactColor('#eab308',this)"></div>
           <div class="redact-cp" style="background:#ef4444" onclick="setRedactColor('#ef4444',this)"></div>
           <div class="redact-cp" style="background:#3b82f6" onclick="setRedactColor('#3b82f6',this)"></div>
           <div class="redact-cp" style="background:#22c55e" onclick="setRedactColor('#22c55e',this)"></div>
@@ -1015,7 +1016,8 @@ const S={
   tool:'select',color:'#eab308',strokeSize:3,opacity:0.7,fontSize:14,
   annos:{},_drawing:false,_startX:0,_startY:0,_currentPoints:[],_activeTextInput:null,
   // OCR
-  redactColor:'#000000',
+  redactColor:'#eab308',
+  _ocrMarkType:'highlight',
   // Text search
   _searchMatches:[],_searchIdx:0,_searchText:'',
   // Compare
@@ -1792,10 +1794,10 @@ async function runOCRSearch(){
         const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
         const iw=Math.max((item.width||40)*S.zoom,10);
         const ih=Math.max((item.height||12)*S.zoom*1.5,10);
-        annos.push({type:'redact',
+        annos.push({type:(S._ocrMarkType||'highlight'),
           x:vPt[0]*dpr, y:(vPt[1]-ih)*dpr,
           w:iw*dpr, h:ih*dpr,
-          color:S.redactColor,strokeSize:1,opacity:1});
+          color:S.redactColor,strokeSize:1,opacity:0.5});
         found++;
       });
     } else {
@@ -1863,13 +1865,13 @@ async function runBulkOCRSearch(){
             if(!item.str||!item.str.toLowerCase().includes(termLow))return;
             const tx=item.transform;
             const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
-            const w=Math.max((item.width||50),10);
-            const h=Math.max((item.height||12)*1.3,10);
+            const iw2=Math.max((item.width||50),10);
+            const ht=Math.max((item.height||12)*1.3,10);
             const dpr=window.devicePixelRatio;
             getAnnos(fileIdx,pg).push({
-              type:'redact',x:vPt[0]*S.zoom*dpr,y:(vPt[1]-h*S.zoom)*dpr,
-              w:w*S.zoom*dpr,h:h*S.zoom*dpr*1.5,
-              color:S.redactColor,strokeSize:1,opacity:1
+              type:'highlight',x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
+              w:iw2*S.zoom*dpr,h:ht*S.zoom*dpr*1.5,
+              color:S.redactColor,strokeSize:1,opacity:0.5
             });
             found++;
           });
