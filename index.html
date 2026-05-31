@@ -1905,46 +1905,58 @@ async function runBulkOCRSearch(){
         const end=Math.min(start+BATCH-1,numPages);
         updateProgress(fi+1,files.length,`${f.name} — side ${start}-${end}/${numPages}`);
 
-        // Use cached text — no getPage calls needed
+        // Process batch — get pages for viewport conversion
         const batchPages=Array.from({length:end-start+1},(_,i)=>start+i);
-        for(const pg of batchPages){
+        await Promise.all(batchPages.map(async pg=>{
           const textItems=f._textCache&&f._textCache[pg] ? f._textCache[pg] : [];
           const matches=textItems.filter(item=>item.str&&item.str.toLowerCase().includes(termLow));
           if(matches.length>0){
-            // Store raw PDF coords — convert to canvas when drawn
+            // Get page for proper coord conversion
+            const pdfPage=await f.pdfJsDoc.getPage(pg);
+            const vp=pdfPage.getViewport({scale:1.0});
+            const dpr=window.devicePixelRatio;
             matches.forEach(item=>{
               const tx=item.transform;
+              const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
+              const iw=Math.max((item.width||50)*S.zoom,10);
+              const ih=Math.max((item.height||12)*S.zoom*1.5,10);
               getAnnos(fileIdx,pg).push({
                 type:(S._ocrMarkType||'highlight'),
-                // Store PDF coords directly — will be converted at render time
-                _pdfX:tx[4],_pdfY:tx[5],
-                _pdfW:item.width||50,_pdfH:item.height||12,
-                x:0,y:0,w:100,h:14, // placeholder, recalculated on render
+                x:vPt[0]*S.zoom*dpr,
+                y:(vPt[1]*S.zoom-ih)*dpr,
+                w:iw*dpr,
+                h:ih*dpr,
                 color:S.redactColor,strokeSize:1,
-                opacity:(S._ocrMarkType==='redact'?1:0.5),
-                _needsCoordConvert:true,_fileIdx:fileIdx,_pg:pg
+                opacity:(S._ocrMarkType==='redact'?1:0.5)
               });
               found++;
             });
-          } else if(!textItems.length){
-            // No text cache = scanned page, needs OCR
-            const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
-            const result=await runTesseract(off);
-            (result.words||[]).forEach(w=>{
-              if(w.text.toLowerCase().includes(termLow)){
-                getAnnos(fileIdx,pg).push({
-                  type:(S._ocrMarkType||'highlight'),
-                  x:w.bbox.x0,y:w.bbox.y0,
-                  w:Math.max(w.bbox.x1-w.bbox.x0,10),
-                  h:Math.max(w.bbox.y1-w.bbox.y0,10),
-                  color:S.redactColor,strokeSize:1,
-                  opacity:(S._ocrMarkType==='redact'?1:0.5),_ocrScale:ocrScale
-                });
-                found++;
-              }
-            });
+          } else if(textItems.length===0){
+            // No text cache = possibly scanned page
+            const pdfPage=await f.pdfJsDoc.getPage(pg);
+            const tc=await pdfPage.getTextContent();
+            if(!tc.items.length){
+              // Truly scanned — use OCR
+              const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
+              const result=await runTesseract(off);
+              const dpr=window.devicePixelRatio;
+              const sr=S.zoom*dpr/ocrScale;
+              (result.words||[]).forEach(w=>{
+                if(w.text.toLowerCase().includes(termLow)){
+                  getAnnos(fileIdx,pg).push({
+                    type:(S._ocrMarkType||'highlight'),
+                    x:w.bbox.x0*sr,y:w.bbox.y0*sr,
+                    w:Math.max((w.bbox.x1-w.bbox.x0)*sr,10),
+                    h:Math.max((w.bbox.y1-w.bbox.y0)*sr,10),
+                    color:S.redactColor,strokeSize:1,
+                    opacity:(S._ocrMarkType==='redact'?1:0.5)
+                  });
+                  found++;
+                }
+              });
+            }
           }
-        }
+        }));
       }
 
       f._ocrSearched=true;f._hasOcr=found>0;
