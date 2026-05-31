@@ -1193,16 +1193,22 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-// Drag & drop — prevent browser navigation, catch PDF files
-document.addEventListener('dragenter',e=>{e.preventDefault();e.stopPropagation();document.getElementById('cv-container').classList.add('drag-over');});
-document.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';});
-document.addEventListener('dragleave',e=>{e.preventDefault();e.stopPropagation();document.getElementById('cv-container').classList.remove('drag-over');});
-document.addEventListener('drop',async e=>{
-  e.preventDefault();e.stopPropagation();
-  document.getElementById('cv-container').classList.remove('drag-over');const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+// Drag & drop — block at window level to prevent browser opening file in new tab
+['dragenter','dragover','dragleave','drop'].forEach(evt=>{
+  window.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();},{capture:true});
+});
+window.addEventListener('dragenter',e=>{document.getElementById('cv-container').classList.add('drag-over');},{capture:true});
+window.addEventListener('dragleave',e=>{
+  // Only remove highlight if leaving the window entirely
+  if(e.clientX===0&&e.clientY===0||e.relatedTarget===null)
+    document.getElementById('cv-container').classList.remove('drag-over');
+},{capture:true});
+window.addEventListener('drop',async e=>{
+  document.getElementById('cv-container').classList.remove('drag-over');
+  const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
   if(files.length){await handleFiles(files);}
   else if(e.dataTransfer.files.length){toast('Kun PDF-filer understøttes',true);}
-});
+},{capture:true});
 
 // Also fix file input — ensure it works cross-browser
 function triggerFile(){
