@@ -1201,44 +1201,40 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-// Drag & drop — use pointer-events overlay technique to block browser PDF viewer
+// Drag & drop setup
 (function setupDrop(){
-  const overlay=document.getElementById('drop-overlay');
-  let dragCount=0;
+  const overlay = document.getElementById('drop-overlay');
 
-  // Show overlay on any drag enter — overlay itself catches the drop
-  document.addEventListener('dragenter',function(e){
+  // Must prevent default on BOTH dragover and drop at window level
+  // to stop Chrome from opening PDF in new tab
+  window.addEventListener('dragover', function(e){
     e.preventDefault();
-    dragCount++;
-    overlay.style.display='block';
-    overlay.style.pointerEvents='all';
-  },false);
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    overlay.style.display = 'block';
+    overlay.style.pointerEvents = 'all';
+  }, true);
 
-  document.addEventListener('dragleave',function(e){
-    dragCount--;
-    if(dragCount<=0){dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';}
-  },false);
-
-  document.addEventListener('dragover',function(e){
+  window.addEventListener('drop', async function(e){
     e.preventDefault();
-    e.dataTransfer.dropEffect='copy';
-  },false);
+    e.stopPropagation();
+    overlay.style.display = 'none';
+    overlay.style.pointerEvents = 'none';
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (files.length) {
+      await handleFiles(files);
+    } else if (e.dataTransfer.files.length) {
+      toast('Kun PDF-filer understøttes — træk kun .pdf filer', true);
+    }
+  }, true);
 
-  // Catch drop on overlay — file never reaches browser
-  overlay.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy';},false);
-  overlay.addEventListener('drop',async function(e){
-    e.preventDefault();e.stopPropagation();
-    dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';
-    const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
-    if(files.length){await handleFiles(files);}
-    else if(e.dataTransfer.files.length){toast('Kun PDF-filer understøttes',true);}
-  },false);
-
-  // Also catch on document as backup
-  document.addEventListener('drop',function(e){
-    e.preventDefault();e.stopPropagation();
-    dragCount=0;overlay.style.display='none';overlay.style.pointerEvents='none';
-  },false);
+  window.addEventListener('dragleave', function(e){
+    // Only hide if leaving the browser window entirely
+    if (!e.relatedTarget) {
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+    }
+  }, true);
 })();
 
 // Also fix file input — ensure it works cross-browser
@@ -2273,12 +2269,10 @@ function renderListMode(){
         const ts=bm.level===1?'font-weight:600;color:var(--t1)':'color:var(--t2)';
         const pl=bm.level>1?(bm.level-1)*16:0;
         return `<div class="lbn ${bm.disabled?'dis':''}" data-fi="${fi}" data-bi="${bi}" style="padding-left:${pl}px">
-          <span class="lbn-dot" title="Klik for at skifte niveau (${bm.level===1?'Hoved→Sub':'Sub→Hoved'})"
-            style="background:${dc};width:${bm.level===1?'8px':'6px'};height:${bm.level===1?'8px':'6px'};cursor:pointer;flex-shrink:0"
-            onclick="event.stopPropagation();cycleLfBmLevel(${fi},${bi})"></span>
-          <span style="font-size:9px;color:${dc};flex-shrink:0;margin-left:-2px;cursor:pointer;user-select:none"
-            onclick="event.stopPropagation();cycleLfBmLevel(${fi},${bi})"
-            title="Klik for at skifte niveau">${bm.level===1?'H':bm.level===2?'S':'S2'}</span>
+          <button onclick="event.stopPropagation();cycleLfBmLevel(${fi},${bi})"
+            title="Klik for at skifte niveau: ${bm.level===1?'Hoved→Sub':bm.level===2?'Sub→Sub-sub':'Sub-sub→Hoved'}"
+            style="flex-shrink:0;border:1px solid ${dc};background:${dc}22;color:${dc};border-radius:4px;font-size:9px;font-weight:700;padding:1px 5px;cursor:pointer;line-height:1.4;min-width:22px"
+            >${bm.level===1?'◆ H':bm.level===2?'◇ S':'◇◇ S2'}</button>
           <span class="lbn-txt" contenteditable="true" style="${ts}" onblur="saveLfBm(${fi},${bi},this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" onclick="event.stopPropagation()">${escH(bm.title)}</span>
           <input type="number" min="1" value="${bm.page}" title="Side nr."
             style="width:40px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;color:var(--t2);font-size:10px;padding:1px 4px;text-align:center;outline:none;flex-shrink:0"
