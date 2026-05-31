@@ -1210,7 +1210,14 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // FILE HANDLING
 // ================================================================
 // triggerFile defined below with drag/drop
-document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
+document.getElementById('file-input').addEventListener('change',async e=>{
+  const files=Array.from(e.target.files);
+  console.log('file-input change fired, files:', files.length);
+  if(!files.length){toast('Ingen filer valgt',true);return;}
+  toast('Indlæser '+files.length+' fil(er)…');
+  await handleFiles(files);
+  e.target.value='';
+});
 document.addEventListener('dragover',e=>e.preventDefault());
 document.addEventListener('drop',async e=>{
   e.preventDefault();
@@ -1221,6 +1228,8 @@ document.addEventListener('drop',async e=>{
 function triggerFile(){document.getElementById('file-input').click();}
 
 async function handleFiles(newFiles){
+  console.log('handleFiles called with', newFiles.length, 'files');
+  if(!newFiles||!newFiles.length){toast('Ingen PDF-filer',true);return;}
   for(const f of newFiles){
     const ab=await f.arrayBuffer();
     S.files.push({name:f.name,buf:ab.slice(0),pdfJsDoc:null,pdfLibDoc:null,rotation:0,
