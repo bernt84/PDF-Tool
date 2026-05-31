@@ -3862,15 +3862,7 @@ async function downloadFilePDF(fileIdx) {
   }
 }
 
-// Start loading MuPDF in background when first PDF is loaded
-const _origHandleFiles = handleFiles;
-async function handleFiles(files) {
-  await _origHandleFiles(files);
-  // Start MuPDF init in background after files loaded
-  if (!MuPDF.ready && !MuPDF.loading) {
-    setTimeout(() => MuPDF.init(), 1000);
-  }
-}
+// MuPDF loads when user clicks "Rediger tekst" - no auto-init needed
 
 // Wire up label file inputs
 ['file-input-topbar','file-input-empty'].forEach(function(id){
