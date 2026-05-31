@@ -1859,54 +1859,69 @@ async function runBulkOCRSearch(){
     try{
       if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
       let found=0;
-      for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
+      const termLow=term.toLowerCase();
+      const numPages=f.pdfJsDoc.numPages;
+      const dpr=window.devicePixelRatio;
+      const ocrScale=1.2;
+      const BATCH=5; // Process 5 pages at a time
+
+      for(let start=1;start<=numPages;start+=BATCH){
         if(S._cancelProgress)break;
-        updateProgress(fi+1,files.length,f.name+' — side '+pg+'/'+f.pdfJsDoc.numPages);
-        const termLow=term.toLowerCase();
-        
-        // FAST PATH: Try PDF text layer first (instant, no OCR needed)
-        const pdfPage=await f.pdfJsDoc.getPage(pg);
-        const textContent=await pdfPage.getTextContent();
-        const hasText=textContent.items.some(item=>item.str&&item.str.toLowerCase().includes(termLow));
-        
-        if(hasText){
-          // Found in text layer — place redact boxes using PDF coords
-          const vp=pdfPage.getViewport({scale:1.0});
-          textContent.items.forEach(item=>{
-            if(!item.str||!item.str.toLowerCase().includes(termLow))return;
-            const tx=item.transform;
-            const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
-            const iw2=Math.max((item.width||50),10);
-            const ht=Math.max((item.height||12)*1.3,10);
-            const dpr=window.devicePixelRatio;
-            getAnnos(fileIdx,pg).push({
-              type:(S._ocrMarkType||'highlight'),x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
-              w:iw2*S.zoom*dpr,h:ht*S.zoom*dpr*1.5,
-              color:S.redactColor,strokeSize:1,opacity:0.5
-            });
-            found++;
-          });
-        } else {
-          // SLOW PATH: No text layer — use OCR (scanned page)
-          const off=await renderPageForOCR(f.pdfJsDoc,pg,1.2,f);
-          const result=await runTesseract(off);
-          const ocrScale=1.2;
-          (result.words||[]).forEach(w=>{
-            if(w.text.toLowerCase().includes(termLow)){
+        const end=Math.min(start+BATCH-1,numPages);
+        updateProgress(fi+1,files.length,`${f.name} — side ${start}-${end}/${numPages}`);
+
+        // Fetch all pages in this batch simultaneously
+        const batch=await Promise.all(
+          Array.from({length:end-start+1},(_,i)=>start+i).map(async pg=>{
+            const pdfPage=await f.pdfJsDoc.getPage(pg);
+            const textContent=await pdfPage.getTextContent();
+            return {pg,pdfPage,textContent};
+          })
+        );
+
+        // Process results
+        for(const {pg,pdfPage,textContent} of batch){
+          const matches=textContent.items.filter(item=>item.str&&item.str.toLowerCase().includes(termLow));
+          if(matches.length>0){
+            const vp=pdfPage.getViewport({scale:1.0});
+            matches.forEach(item=>{
+              const tx=item.transform;const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
+              const iw2=Math.max((item.width||50),10);const ht=Math.max((item.height||12)*1.3,10);
               getAnnos(fileIdx,pg).push({
-                type:'redact',
-                x:w.bbox.x0,y:w.bbox.y0,
-                w:Math.max(w.bbox.x1-w.bbox.x0,10),
-                h:Math.max(w.bbox.y1-w.bbox.y0,10),
-                color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:ocrScale
+                type:(S._ocrMarkType||'highlight'),
+                x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
+                w:iw2*S.zoom*dpr,h:ht*S.zoom*dpr*1.5,
+                color:S.redactColor,strokeSize:1,
+                opacity:(S._ocrMarkType==='redact'?1:0.5)
               });
               found++;
-            }
-          });
+            });
+          } else {
+            // No text layer — OCR this page
+            const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
+            const result=await runTesseract(off);
+            (result.words||[]).forEach(w=>{
+              if(w.text.toLowerCase().includes(termLow)){
+                getAnnos(fileIdx,pg).push({
+                  type:(S._ocrMarkType||'highlight'),
+                  x:w.bbox.x0,y:w.bbox.y0,
+                  w:Math.max(w.bbox.x1-w.bbox.x0,10),
+                  h:Math.max(w.bbox.y1-w.bbox.y0,10),
+                  color:S.redactColor,strokeSize:1,
+                  opacity:(S._ocrMarkType==='redact'?1:0.5),_ocrScale:ocrScale
+                });
+                found++;
+              }
+            });
+          }
         }
       }
-      if(found>0)markOcrDone(fileIdx);
-      const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';results.appendChild(item);
+
+      f._ocrSearched=true;f._hasOcr=found>0;
+      renderFileList();if(S._mode==='list')renderListMode();
+      const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;
+      item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';
+      results.appendChild(item);
     }catch(err){const item=document.createElement('div');item.className='ocr-ri ocr-fail';item.textContent='✕ '+f.name+': '+err.message;results.appendChild(item);}
   }
   hideProgress();renderFileList();if(S.activeIdx>=0)renderAnnoList();toast('OCR søgning færdig ✓','ok');
