@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>PDF Tool Pro v2.0</title>
+<title>PDF Tool Pro v2.1</title>
+<meta name="version" content="2.1"/>
 
 <!-- Libraries -->
 <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -87,8 +88,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 /* ── PREVIEW ── */
 #preview-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-#cv-container{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:14px;background:#060809;position:relative}
-#cv-sizer{position:relative;display:none}
+#cv-container{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:14px;background:#060809;position:relative;scrollbar-width:thin;scrollbar-color:var(--bd2) transparent}
+#cv-sizer{position:relative;display:none;cursor:default}
 #pdf-canvas{display:block}
 #anno-canvas{position:absolute;top:0;left:0}
 #txt-overlay{position:absolute;top:0;left:0;pointer-events:none}
@@ -293,6 +294,41 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 .grp-chip{display:inline-flex;align-items:center;padding:1px 5px;border-radius:8px;font-size:9px;font-weight:700;color:#fff}
 .gc0{background:#3b82f6}.gc1{background:#22c55e}.gc2{background:#f59e0b}.gc3{background:#a855f7}.gc4{background:#06b6d4}.gc5{background:#f97316}
 
+
+/* ── TEKST REDIGERING ── */
+.te-overlay-box{
+  position:absolute;box-sizing:border-box;cursor:text;
+  background:transparent;border:none;outline:none;
+  font-family:inherit;color:transparent;caret-color:var(--acc);
+  padding:0;margin:0;resize:none;overflow:hidden;white-space:pre;
+  line-height:1;z-index:40;
+}
+.te-overlay-box:hover{
+  background:rgba(59,130,246,.08);
+  border:1px solid rgba(59,130,246,.3);
+  border-radius:2px;
+  color:rgba(255,255,255,.01);
+}
+.te-overlay-box:focus{
+  background:rgba(255,255,255,.95);
+  border:2px solid var(--acc);
+  border-radius:3px;
+  color:#111;
+  z-index:50;
+  box-shadow:0 2px 12px rgba(59,130,246,.3);
+}
+.te-overlay-box.modified{
+  background:rgba(234,179,8,.1);
+  border:1px solid rgba(234,179,8,.4);
+  border-radius:2px;
+}
+#te-edit-bar{
+  height:32px;flex-shrink:0;background:var(--sf3);border-bottom:1px solid var(--bd);
+  display:none;align-items:center;gap:6px;padding:0 8px;font-size:11px;
+}
+#te-edit-bar.active{display:flex}
+#te-edit-info{flex:1;color:var(--t3);font-size:10px}
+
 /* ── MISC ── */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--sf3);border:1px solid var(--bd2);color:var(--t1);padding:8px 18px;border-radius:18px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:999}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -467,6 +503,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <button class="btn bIcon bSm" onclick="togglePageMgr()">⊞</button>
   </div>
   <div class="sp"></div>
+  <button class="btn bGh bSm" id="tb-textedit" disabled onclick="toggleTextEdit()" title="Rediger tekst direkte i PDF">✎ Rediger tekst</button>
   <button class="btn bAmb bSm" id="tb-sug" disabled onclick="showFnSuggest()">📄 Omdøb</button>
   <button class="btn bSuc bSm" id="tb-save" disabled onclick="smartDownload()">⬇ Download</button>
 </div>
@@ -600,6 +637,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
   <div id="preview-area">
     <div style="display:flex;flex:1;overflow:hidden;position:relative">
+      <div id="te-edit-bar">
+        <span id="te-edit-info">Klik på tekst i dokumentet for at redigere</span>
+        <button class="btn bXs bGh" onclick="teUndoAll()">↩ Nulstil alt</button>
+        <button class="btn bXs" style="background:rgba(234,179,8,.2);color:var(--amb);border:1px solid rgba(234,179,8,.3)" onclick="teShowModified()">📋 Vis ændringer</button>
+        <button class="btn bXs bDng" onclick="toggleTextEdit()">✕ Luk</button>
+      </div>
       <div id="cv-container">
         <div id="cv-sizer">
           <canvas id="pdf-canvas" style="display:block"></canvas>
@@ -1325,7 +1368,7 @@ async function openFile(idx){
     S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
     await renderPage();renderFileList();await loadBms(f);loadMeta(f);
     if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
-    ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
+    ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
       .forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=false;});
     document.getElementById('te-pgnum').textContent=S.page;
     if(S._compareOpen)populateCompareSelects();
@@ -2100,7 +2143,7 @@ async function autoRotateAll(){
 // ================================================================
 // NAV + ZOOM + ROTATE
 // ================================================================
-function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();renderPage();if(S._pageMgrOpen)highlightThumb(n);}
+function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();renderPage();if(S._pageMgrOpen)highlightThumb(n);if(TE.active)setTimeout(()=>teLoadPage(),300);}
 function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();renderPage();}
 function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.totalPages===0;pi.max=S.totalPages;document.getElementById('tb-prev').disabled=S.page<=1;document.getElementById('tb-next').disabled=S.page>=S.totalPages;}
 function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
@@ -2581,7 +2624,7 @@ async function downloadFilePDF(fileIdx){
     if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
     if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
     if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
-    await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);
+    await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);await bakeTextEditsNew(doc,fileIdx);
     const activeBms=f._existingBms.filter(b=>!b.disabled);
     if(activeBms.length>0)applyOutline(doc,activeBms);
     else if(f.bulkAction==='replace'&&f.bulkNewBm)applyOutline(doc,[{level:1,title:f.bulkNewBm.title,page:1,disabled:false},{level:2,title:f.bulkNewBm.subTitle||'Certificate',page:1,disabled:false}]);
@@ -2603,7 +2646,7 @@ async function bulkZip(files){
       if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
       if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
       if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
-      await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);
+      await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);await bakeTextEditsNew(doc,fileIdx);
       const activeBms=f._existingBms.filter(b=>!b.disabled);
       if(activeBms.length>0)applyOutline(doc,activeBms);
       else if(f.bulkAction==='replace'&&f.bulkNewBm)applyOutline(doc,[{level:1,title:f.bulkNewBm.title,page:1,disabled:false},{level:2,title:f.bulkNewBm.subTitle||'Certificate',page:1,disabled:false}]);
@@ -2645,7 +2688,7 @@ function clearAll(){
   document.getElementById('te-blocks').innerHTML='<div class="te-empty">Klik "Hent tekst" eller "Formular"</div>';
   document.getElementById('pn-tot').textContent='/ —';document.getElementById('pn-inp').value=1;
   document.getElementById('pt-list').innerHTML='';document.getElementById('cv-sizer').style.display='none';
-  ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
+  ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
   showEmpty(true);closeFnBox();cancelBmEdit();
   document.getElementById('txt-overlay').innerHTML='';document.getElementById('txt-overlay').style.pointerEvents='none';
   document.getElementById('search-overlay').innerHTML='';
@@ -2803,12 +2846,30 @@ async function mpvRenderAll() {
       });
     }
 
+    // Render thumbnail canvas
+    const tCv = document.createElement('canvas');
+    tCv.style.cssText = 'display:block;width:100%;border-radius:3px';
+    thumb.insertBefore(tCv, thumb.firstChild);
+    (async (pageNum, canvas) => {
+      try {
+        const page = await f.pdfJsDoc.getPage(pageNum);
+        const vp = page.getViewport({scale: 0.25});
+        canvas.width = vp.width; canvas.height = vp.height;
+        await page.render({canvasContext: canvas.getContext('2d'), viewport: vp}).promise;
+        // Highlight active
+        if (pageNum === MPV.page) thumb.style.borderColor = 'var(--acc)';
+      } catch(e) {}
+    })(pg, tCv);
+
     // Small page num label on thumb
     const tLbl = document.createElement('div');
     tLbl.style.cssText = 'font-size:9px;color:var(--t3);text-align:center;padding:2px 0;background:var(--sf2)';
     tLbl.textContent = 'Side ' + pg;
     thumb.appendChild(tLbl);
     thumbList.appendChild(thumb);
+
+    // Scroll active thumb into view
+    if (pg === MPV.page) setTimeout(() => thumb.scrollIntoView({block:'center'}), 200);
   }
 
   // Add Set BM button for each page in thumb
@@ -3169,6 +3230,218 @@ function markOcrDone(fileIdx) {
   var el=document.getElementById(id);
   if(el)el.addEventListener('change',function(){handleFilesFromInput(this);});
 });
+
+// ================================================================
+// TEKST REDIGERING — direkte PDF tekst-edit
+// ================================================================
+const TE = {
+  active: false,
+  items: [],      // {origText, newText, pdfX, pdfY, fontSize, fontName, vx, vy, vw, vh, vfs, deleted, el}
+  fileIdx: -1,
+  page: -1,
+};
+
+async function toggleTextEdit() {
+  TE.active = !TE.active;
+  const bar = document.getElementById('te-edit-bar');
+  bar.classList.toggle('active', TE.active);
+  if (TE.active) {
+    await teLoadPage();
+    document.getElementById('te-edit-info').textContent = 'Klik på tekst for at redigere — ændringer bages ind ved download';
+  } else {
+    teClearOverlay();
+  }
+}
+
+async function teLoadPage() {
+  if (S.activeIdx < 0) return;
+  const f = S.files[S.activeIdx];
+  teClearOverlay();
+  TE.items = [];
+  TE.fileIdx = S.activeIdx;
+  TE.page = S.page;
+
+  const page = await f.pdfJsDoc.getPage(S.page);
+  const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
+  const totalRot = (S.rotation + pageRot) % 360;
+  const vp = page.getViewport({scale: S.zoom, rotation: totalRot});
+  const content = await page.getTextContent({includeMarkedContent: false});
+
+  const overlay = document.getElementById('txt-overlay');
+  overlay.style.pointerEvents = 'all';
+
+  const items = content.items.filter(i => i.str && i.str.trim().length > 0);
+  let modCount = 0;
+
+  items.forEach((item, idx) => {
+    const tx = item.transform;
+    const fontSize = Math.sqrt(tx[0]*tx[0] + tx[1]*tx[1]);
+    const vPt = vp.convertToViewportPoint(tx[4], tx[5]);
+    const vfs = Math.max(6, fontSize * S.zoom);
+    const vw = Math.max((item.width || 0) * S.zoom + 4, 20);
+    const vh = vfs * 1.4;
+    const vx = vPt[0];
+    const vy = vPt[1] - vfs;
+
+    const teItem = {
+      origText: item.str,
+      newText: item.str,
+      pdfX: tx[4], pdfY: tx[5],
+      fontSize, fontName: item.fontName || '',
+      vx, vy, vw, vh, vfs,
+      deleted: false,
+      el: null,
+      idx,
+    };
+
+    // Create textarea overlay
+    const el = document.createElement('textarea');
+    el.className = 'te-overlay-box';
+    el.value = item.str;
+    el.rows = 1;
+    el.style.cssText = `left:${vx}px;top:${vy}px;width:${vw}px;height:${vh}px;font-size:${vfs}px;`;
+    el.title = `Klik for at redigere: "${item.str.substring(0,40)}"`;
+
+    el.addEventListener('focus', () => {
+      el.style.height = 'auto';
+      el.style.minHeight = vh + 'px';
+      document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
+    });
+
+    el.addEventListener('blur', () => {
+      const newVal = el.value;
+      teItem.newText = newVal;
+      const changed = newVal !== teItem.origText;
+      el.classList.toggle('modified', changed);
+      el.style.height = vh + 'px';
+      if (changed) modCount++;
+      const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
+      document.getElementById('te-edit-info').textContent =
+        mods > 0 ? `${mods} tekstelement(er) ændret — gemmes ved download` : 'Klik på tekst for at redigere';
+    });
+
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { el.value = teItem.origText; teItem.newText = teItem.origText; el.blur(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); }
+    });
+
+    // Double-click to delete text element
+    el.addEventListener('dblclick', e => {
+      if (confirm('Slet dette tekstelement fra PDF?')) {
+        teItem.deleted = true;
+        el.style.opacity = '0.2';
+        el.style.textDecoration = 'line-through';
+        el.disabled = true;
+      }
+    });
+
+    overlay.appendChild(el);
+    teItem.el = el;
+    TE.items.push(teItem);
+  });
+
+  document.getElementById('te-edit-info').textContent =
+    `${items.length} tekstelementer — klik for at redigere`;
+}
+
+function teClearOverlay() {
+  const overlay = document.getElementById('txt-overlay');
+  overlay.innerHTML = '';
+  overlay.style.pointerEvents = 'none';
+}
+
+function teUndoAll() {
+  TE.items.forEach(item => {
+    item.newText = item.origText;
+    item.deleted = false;
+    if (item.el) {
+      item.el.value = item.origText;
+      item.el.classList.remove('modified');
+      item.el.style.opacity = '1';
+      item.el.style.textDecoration = 'none';
+      item.el.disabled = false;
+    }
+  });
+  document.getElementById('te-edit-info').textContent = 'Alle ændringer nulstillet';
+}
+
+function teShowModified() {
+  const mods = TE.items.filter(i => i.newText !== i.origText || i.deleted);
+  if (!mods.length) { toast('Ingen ændringer endnu', true); return; }
+  const lines = mods.map(m =>
+    m.deleted ? `SLET: "${m.origText}"` : `"${m.origText}" → "${m.newText}"`
+  ).join('\n');
+  alert(`${mods.length} ændring(er):\n\n${lines}`);
+}
+
+// Bake text edits into PDF on download
+async function bakeTextEditsNew(doc, fileIdx) {
+  if (TE.fileIdx !== fileIdx || !TE.items.length) return;
+  const f = S.files[fileIdx];
+  if (!f || !f.pdfJsDoc) return;
+
+  const fontR = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+  const fontB = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+
+  const pageIdx = TE.page - 1;
+  if (pageIdx < 0 || pageIdx >= doc.getPageCount()) return;
+  const page = doc.getPage(pageIdx);
+  const {width: pW, height: pH} = page.getSize();
+
+  const pdfPage = await f.pdfJsDoc.getPage(TE.page);
+  const vp = pdfPage.getViewport({scale: 1.0});
+  const scX = pW / vp.width;
+  const scY = pH / vp.height;
+
+  for (const item of TE.items) {
+    if (item.newText === item.origText && !item.deleted) continue;
+
+    const x = item.pdfX;
+    const y = item.pdfY;
+    const fs = Math.max(6, item.fontSize * 0.92);
+
+    // White-out original text
+    let tw = fs * item.origText.length * 0.55;
+    try { tw = fontR.widthOfTextAtSize(item.origText, fs); } catch(e) {}
+    page.drawRectangle({
+      x: x - 1, y: y - 2,
+      width: tw + 4, height: fs + 4,
+      color: PDFLib.rgb(1, 1, 1),
+      opacity: 1, borderWidth: 0,
+    });
+
+    if (!item.deleted && item.newText.trim()) {
+      // Draw new text
+      const safe = item.newText.replace(/[^\x20-\x7E\xC0-\xFF]/g, '?');
+      try {
+        page.drawText(safe, {
+          x, y,
+          size: fs,
+          font: fontR,
+          color: PDFLib.rgb(0, 0, 0),
+        });
+      } catch(e) {}
+    }
+  }
+}
+
+// Hook into existing extractText to activate TE mode
+async function extractText() {
+  if (S.activeIdx < 0) return;
+  TE.active = true;
+  document.getElementById('te-edit-bar').classList.add('active');
+  await teLoadPage();
+  switchRT('te');
+  // Also populate the right panel list
+  const wrap = document.getElementById('te-blocks');
+  wrap.innerHTML = '<div class="te-empty" style="color:var(--acc)">✓ Tekst indlæst — klik direkte i dokumentet for at redigere</div>';
+  // Add summary of items
+  const div = document.createElement('div');
+  div.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--t2)';
+  div.textContent = TE.items.length + ' tekstelementer klar til redigering. Dobbeltklik på et element for at slette det.';
+  wrap.appendChild(div);
+}
+
 </script>
 </body>
 </html>
