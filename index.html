@@ -995,6 +995,42 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-ocr-bulk')">Luk</button><button class="btn bPri bSm" onclick="runBulkOCRSearch()">🔍 Søg & Overstreg</button></div>
 </div></div>
 
+
+<!-- PREVIEW MODAL -->
+<div class="mbk" id="m-preview">
+  <div class="mdl" style="width:800px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="mhd" style="flex-shrink:0">
+      <span id="mpv-title" style="font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></span>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+        <button class="btn bIcon bXs" onclick="mpvNav(-1)">◀</button>
+        <input id="mpv-pg-inp" type="number" min="1" value="1"
+          style="background:var(--sf2);border:1px solid var(--bd);border-radius:5px;color:var(--t1);font-size:12px;padding:2px 5px;width:42px;text-align:center;outline:none"
+          onchange="mpvGoto(this.value)"/>
+        <span id="mpv-pg-tot" style="font-size:12px;color:var(--t3)">/ —</span>
+        <button class="btn bIcon bXs" onclick="mpvNav(1)">▶</button>
+        <div class="vsep"></div>
+        <button class="btn bIcon bXs" onclick="mpvZoom(-.25)">−</button>
+        <span id="mpv-zoom-lbl" style="font-size:11px;color:var(--t3);min-width:36px;text-align:center">100%</span>
+        <button class="btn bIcon bXs" onclick="mpvZoom(.25)">+</button>
+        <div class="vsep"></div>
+        <button class="btn bGh bXs" onclick="closeM('m-preview')">✕ Luk</button>
+      </div>
+    </div>
+    <!-- BM strip -->
+    <div id="mpv-bm-strip" style="padding:7px 14px;background:var(--sf2);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0">
+      <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3)">Bogmærker på side <span id="mpv-cur-pg">1</span>:</span>
+      <div id="mpv-pg-bms" style="display:flex;gap:5px;flex:1;flex-wrap:wrap;min-width:0"></div>
+    </div>
+    <!-- Canvas area -->
+    <div style="flex:1;overflow:auto;background:#060809;display:flex;align-items:flex-start;justify-content:center;padding:14px;min-height:0">
+      <div style="position:relative;display:inline-block">
+        <canvas id="mpv-canvas" style="display:block"></canvas>
+        <canvas id="mpv-anno-canvas" style="position:absolute;top:0;left:0;pointer-events:none"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <!-- ============================================================
@@ -2180,7 +2216,12 @@ function renderListMode(){
         return `<div class="lbn ${bm.disabled?'dis':''}" data-fi="${fi}" data-bi="${bi}" style="padding-left:${pl}px">
           <span class="lbn-dot" style="background:${dc};width:${bm.level===1?'8px':'6px'};height:${bm.level===1?'8px':'6px'}"></span>
           <span class="lbn-txt" contenteditable="true" style="${ts}" onblur="saveLfBm(${fi},${bi},this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}" onclick="event.stopPropagation()">${escH(bm.title)}</span>
-          <span class="lbn-pg">s.${bm.page}</span>
+          <input type="number" min="1" value="${bm.page}" title="Side nr."
+            style="width:40px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;color:var(--t2);font-size:10px;padding:1px 4px;text-align:center;outline:none;flex-shrink:0"
+            onchange="saveLfBmPage(${fi},${bi},this.value)" onclick="event.stopPropagation()"/>
+          <button class="btn bXs" onclick="event.stopPropagation();openPreview(${fi},${bm.page})"
+            style="padding:2px 6px;font-size:10px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:var(--acc);border-radius:4px;cursor:pointer;flex-shrink:0"
+            title="Preview fil fra denne side">👁</button>
           <label class="tog-m" onclick="event.stopPropagation()"><input type="checkbox" ${bm.disabled?'':'checked'} onchange="toggleLfBm(${fi},${bi},this.checked)"/><span class="tog-sl"></span></label>
           <span class="lbn-del" onclick="delLfBm(${fi},${bi})">✕</span>
         </div>`;
@@ -2583,6 +2624,99 @@ function showAISetup() {
   if (btn) { btn.disabled = false; btn.textContent = '⬇ Hent AI og kom i gang'; }
   setup.style.display = 'flex';
   setup.style.opacity = '1';
+}
+
+
+// ================================================================
+// PREVIEW MODAL
+// ================================================================
+const MPV = { fileIdx:-1, page:1, zoom:1.0, totalPages:0 };
+
+async function openPreview(fileIdx, startPage) {
+  MPV.fileIdx = fileIdx;
+  MPV.page = parseInt(startPage) || 1;
+  MPV.zoom = 1.0;
+  const f = S.files[fileIdx];
+  if (!f) return;
+
+  // Load PDF if needed
+  if (!f.pdfJsDoc) f.pdfJsDoc = await pdfjsLib.getDocument({data: f.buf.slice(0)}).promise;
+  MPV.totalPages = f.pdfJsDoc.numPages;
+  MPV.page = Math.min(Math.max(1, MPV.page), MPV.totalPages);
+
+  document.getElementById('mpv-title').textContent = f.name;
+  document.getElementById('mpv-pg-tot').textContent = '/ ' + MPV.totalPages;
+  openM('m-preview');
+  await mpvRender();
+}
+
+async function mpvRender() {
+  const f = S.files[MPV.fileIdx];
+  if (!f || !f.pdfJsDoc) return;
+  const page = await f.pdfJsDoc.getPage(MPV.page);
+  const dpr = window.devicePixelRatio;
+  const vp = page.getViewport({scale: MPV.zoom * dpr});
+  const cv = document.getElementById('mpv-canvas');
+  const av = document.getElementById('mpv-anno-canvas');
+  cv.width = vp.width; cv.height = vp.height;
+  av.width = vp.width; av.height = vp.height;
+  const W = vp.width / dpr, H = vp.height / dpr;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  av.style.width = W + 'px'; av.style.height = H + 'px';
+  await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+
+  // Draw annotations for this page
+  const ctx = av.getContext('2d');
+  ctx.clearRect(0, 0, av.width, av.height);
+  const annos = getAnnos(MPV.fileIdx, MPV.page);
+  annos.forEach(a => drawAnno(ctx, a));
+
+  document.getElementById('mpv-pg-inp').value = MPV.page;
+  document.getElementById('mpv-zoom-lbl').textContent = Math.round(MPV.zoom * 100) + '%';
+  document.getElementById('mpv-cur-pg').textContent = MPV.page;
+
+  // Show bookmarks for this page
+  const bms = (S.files[MPV.fileIdx]._existingBms || []).filter(b => b.page === MPV.page && !b.disabled);
+  const pgBms = document.getElementById('mpv-pg-bms');
+  if (bms.length) {
+    pgBms.innerHTML = bms.map((b,i) =>
+      `<span style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--acc)">
+        ${'◆'.repeat(b.level)} ${escH(b.title)}
+      </span>`
+    ).join('');
+  } else {
+    pgBms.innerHTML = '<span style="font-size:11px;color:var(--t3);font-style:italic">Ingen bogmærker på denne side</span>';
+  }
+}
+
+function mpvNav(d) {
+  const n = MPV.page + d;
+  if (n < 1 || n > MPV.totalPages) return;
+  MPV.page = n;
+  mpvRender();
+}
+function mpvGoto(v) {
+  const n = parseInt(v);
+  if (isNaN(n)) return;
+  MPV.page = Math.min(Math.max(1, n), MPV.totalPages);
+  mpvRender();
+}
+function mpvZoom(d) {
+  MPV.zoom = Math.max(0.3, Math.min(3, MPV.zoom + d));
+  mpvRender();
+}
+
+// Save page number from list mode input
+function saveLfBmPage(fi, bi, val) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < 1) return;
+  if (S.files[fi] && S.files[fi]._existingBms[bi]) {
+    S.files[fi]._existingBms[bi].page = n;
+    if (S.activeIdx === fi) {
+      S.bms = S.files[fi]._existingBms.map(b => ({...b}));
+      renderBmList();
+    }
+  }
 }
 
 // Init signature canvas after load
