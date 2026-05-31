@@ -1456,6 +1456,10 @@ async function renderPage(){
   redrawAnnos();setupAnnoEvents();
   if(S._searchText)renderSearchHighlights();
   if(S._inlineEditMode)refreshTextOverlay();
+  // Reload MuEditor overlay when page changes
+  if(typeof MuEditor !== 'undefined' && MuEditor.active) {
+    setTimeout(() => MuEditor.loadPage(), 300);
+  }
 }
 
 // ================================================================
@@ -3824,11 +3828,7 @@ function teShowModified() {
 }
 
 // Hook into page changes
-const _origChangePage = changePage;
-function changePage(d) {
-  _origChangePage(d);
-  if (MuEditor.active) setTimeout(() => MuEditor.loadPage(), 400);
-}
+// MuEditor reloads on page change via renderPage hook below
 
 // Hook into download — bake MuPDF edits
 const _origDownloadFilePDF = downloadFilePDF;
