@@ -1165,10 +1165,11 @@ function getImgEls(fi,pg){if(!S._imgElements[fi])S._imgElements[fi]={};if(!S._im
 
 function fileBadges(f){
   let b='';
-  if(f.bulkStatus==='ok')b+='<span class="badge bOk">✓ BM</span>';
+  if(f.bulkStatus==='ok'||f._hasBm)b+='<span class="badge bOk">✓ BM</span>';
   else if(f.bulkStatus==='none')b+='<span class="badge bNone">⚠ Ingen BM</span>';
-  if(f._hasOcr)b+='<span class="badge bOcr">👁 OCR</span>';
-  if(f._hasRotation)b+='<span class="badge bRot">↻</span>';
+  if(f._hasOcr)b+='<span class="badge bOcr" title="OCR fund">👁 OCR</span>';
+  else if(f._ocrSearched)b+='<span class="badge" style="background:rgba(239,68,68,.15);color:var(--red)" title="OCR søgt — intet fundet">👁 Ikke fundet</span>';
+  if(f._hasRotation||f.pendingRotation||(f.pageRotations&&Object.keys(f.pageRotations).length>0))b+='<span class="badge bRot">↻</span>';
   return b;
 }
 
@@ -2736,12 +2737,11 @@ async function getTessWorker() {
 // Enhanced file badges — BM + OCR + Rotation status
 function fileBadges(f) {
   let b = '';
-  // BM status
   if (f.bulkStatus === 'ok' || f._hasBm) b += '<span class="fi-badge fib-bm-ok">✓ BM</span>';
   else if (f.bulkStatus === 'none') b += '<span class="fi-badge fib-bm-none">⚠ Ingen BM</span>';
-  // OCR status
-  if (f._hasOcr) b += '<span class="fi-badge fib-ocr-ok">👁 OCR</span>';
-  // Rotation status
+  // OCR — grøn hvis fundet, rød hvis søgt men intet fundet
+  if (f._hasOcr) b += '<span class="fi-badge fib-ocr-ok" title="OCR fund">👁 OCR</span>';
+  else if (f._ocrSearched) b += '<span class="fi-badge" style="background:rgba(239,68,68,.15);color:var(--red)" title="OCR søgt — intet fundet">👁 Ikke fundet</span>';
   if (f._hasRotation || f.pendingRotation || (f.pageRotations && Object.keys(f.pageRotations).length > 0)) {
     b += '<span class="fi-badge fib-rot-ok">↻ Roteret</span>';
   }
