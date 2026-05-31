@@ -441,7 +441,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="topbar">
   <div class="logo">⬛ PDF Tool Pro<sub>v2.0</sub></div>
   <div class="vsep"></div>
-  <button class="btn bPri bSm" onclick="triggerFile()">+ PDF</button>
+  <label class="btn bPri bSm" style="cursor:pointer"><input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>+ PDF</label>
   <div class="vsep"></div>
   <button class="mode-btn active" id="btn-pm" onclick="setMode('preview')">⊞ Preview</button>
   <button class="mode-btn" id="btn-lm" onclick="setMode('list')">≡ Liste</button>
@@ -611,7 +611,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
           <div class="ei">📑</div>
           <p>Tilføj PDF-filer</p>
           <p style="font-size:11px;color:var(--t4);margin-top:4px">Træk & slip eller klik + PDF</p>
-          <button class="btn bPri" onclick="triggerFile()" style="margin-top:8px">+ Tilføj PDF</button>
+          <label class="btn bPri" style="margin-top:8px;cursor:pointer"><input type="file" accept=".pdf" multiple style="display:none" onchange="handleFilesFromInput(this)"/>+ Tilføj PDF</label>
         </div>
       </div>
 
@@ -1225,7 +1225,17 @@ document.addEventListener('drop',async e=>{
 });
 
 // Also fix file input — ensure it works cross-browser
-function triggerFile(){document.getElementById('file-input').click();}
+async function handleFilesFromInput(inp){
+  const files=Array.from(inp.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  inp.value='';
+  if(files.length) await handleFiles(files);
+  else if(inp.files.length) toast('Kun PDF-filer understøttes',true);
+}
+function triggerFile(){
+  // Fallback — find label input
+  const inp=document.querySelector('label input[type=file]');
+  if(inp){inp.value='';inp.click();}
+}
 
 async function handleFiles(newFiles){
   console.log('handleFiles called with', newFiles.length, 'files');
