@@ -704,7 +704,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
       </div>
       <!-- OCR Search -->
       <div id="ocr-search-panel">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">🔍 OCR Overstrekning</div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:5px">🔍 OCR Markering</div>
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
           <span style="font-size:10px;color:var(--t3)">Farve:</span>
           <div class="redact-cp" style="background:#000000" onclick="setRedactColor('#000000',this)"></div>
@@ -966,10 +966,20 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 <!-- OCR BULK -->
 <div class="mbk" id="m-ocr-bulk"><div class="mdl">
-  <div class="mhd">🔍 OCR Overstrekning — Bulk <button onclick="closeM('m-ocr-bulk')">✕</button></div>
+  <div class="mhd">🔍 OCR Markering — Bulk <button onclick="closeM('m-ocr-bulk')">✕</button></div>
   <div class="mbd">
-    <div style="font-size:12px;color:var(--t2)">Søger i alle markerede filer efter tekst via OCR og overstreger automatisk på alle sider.</div>
+    <div style="font-size:12px;color:var(--t2)">Søger i alle markerede filer og markerer teksten automatisk på alle sider.</div>
     <div class="mfield"><label>Søgetekst</label><input class="minput" id="ocr-bulk-term" type="text" placeholder="F.eks. 84747041"/></div>
+    <div class="mfield"><label>Type</label>
+      <div style="display:flex;gap:12px;margin-top:3px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--t2);cursor:pointer">
+          <input type="radio" name="bulk-mark-type" value="highlight" checked onchange="S._ocrMarkType=this.value" style="accent-color:var(--acc)"/> Fremhæv (tekst synlig)
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--t2);cursor:pointer">
+          <input type="radio" name="bulk-mark-type" value="redact" onchange="S._ocrMarkType=this.value" style="accent-color:var(--acc)"/> Overstreg (tekst skjult)
+        </label>
+      </div>
+    </div>
     <div class="mfield"><label>Farve</label>
       <div style="display:flex;gap:6px;margin-top:3px">
         <div class="bulk-rcp sel" style="width:22px;height:22px;border-radius:50%;background:#000;cursor:pointer;border:2px solid #fff;flex-shrink:0" onclick="setBulkRC('#000000',this)"></div>
@@ -1870,7 +1880,7 @@ async function runBulkOCRSearch(){
             const ht=Math.max((item.height||12)*1.3,10);
             const dpr=window.devicePixelRatio;
             getAnnos(fileIdx,pg).push({
-              type:'highlight',x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
+              type:(S._ocrMarkType||'highlight'),x:vPt[0]*S.zoom*dpr,y:(vPt[1]-ht*S.zoom)*dpr,
               w:iw2*S.zoom*dpr,h:ht*S.zoom*dpr*1.5,
               color:S.redactColor,strokeSize:1,opacity:0.5
             });
