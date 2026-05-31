@@ -316,6 +316,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #ai-ready-badge.ready{color:var(--grn);border-color:rgba(34,197,94,.3)}
 #ai-ready-badge.loading{color:var(--acc)}
 #ai-ready-badge.error{color:var(--red);border-color:rgba(239,68,68,.3)}
+
+#cv-container.drag-over{background:rgba(59,130,246,.08);outline:3px dashed var(--acc);}
+#cv-container.drag-over #drop-hint{color:var(--acc);font-size:14px;}
 </style>
 </head>
 <body>
@@ -1188,10 +1191,25 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // FILE HANDLING
 // ================================================================
-function triggerFile(){document.getElementById('file-input').click();}
+// triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{await handleFiles(Array.from(e.target.files));e.target.value='';});
-document.addEventListener('dragover',e=>e.preventDefault());
-document.addEventListener('drop',async e=>{e.preventDefault();await handleFiles(Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf')));});
+// Drag & drop — prevent browser navigation, catch PDF files
+document.addEventListener('dragenter',e=>{e.preventDefault();e.stopPropagation();document.getElementById('cv-container').classList.add('drag-over');});
+document.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';});
+document.addEventListener('dragleave',e=>{e.preventDefault();e.stopPropagation();document.getElementById('cv-container').classList.remove('drag-over');});
+document.addEventListener('drop',async e=>{
+  e.preventDefault();e.stopPropagation();
+  document.getElementById('cv-container').classList.remove('drag-over');const files=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(files.length){await handleFiles(files);}
+  else if(e.dataTransfer.files.length){toast('Kun PDF-filer understøttes',true);}
+});
+
+// Also fix file input — ensure it works cross-browser
+function triggerFile(){
+  const inp=document.getElementById('file-input');
+  inp.value=''; // reset so same file can be re-selected
+  inp.click();
+}
 
 async function handleFiles(newFiles){
   for(const f of newFiles){
