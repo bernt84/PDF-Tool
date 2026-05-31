@@ -10,6 +10,7 @@
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://unpkg.com/sortablejs@1.15.2/Sortable.min.js"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -302,10 +303,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #prog{position:fixed;top:0;left:0;height:2px;background:var(--acc);width:0;transition:width .25s;z-index:9999}
 #file-input{display:none}#img-input{display:none}
 
-/* API key setup */
-#api-setup{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:700;display:flex;align-items:center;justify-content:center}
-#api-setup.hidden{display:none}
-#api-box{background:var(--sf);border:1px solid var(--bd2);border-radius:var(--rlg);padding:28px 32px;width:480px;max-width:95vw;display:flex;flex-direction:column;gap:14px}
+/* API setup CSS removed */
 </style>
 </head>
 <body>
@@ -313,22 +311,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <input type="file" id="file-input" accept=".pdf" multiple/>
 <input type="file" id="img-input" accept="image/*"/>
 
-<!-- API SETUP SCREEN -->
-<div id="api-setup">
-  <div id="api-box">
-    <div style="font-size:20px;font-weight:900;color:var(--acc)">⬛ PDF Tool Pro <span style="font-size:12px;color:var(--t3)">v2.0</span></div>
-    <div style="font-size:13px;color:var(--t2)">For at bruge OCR-funktioner skal du indtaste din Google Vision API-nøgle. Den gemmes kun i din browser.</div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3)">Google Vision API Nøgle</label>
-      <input id="api-key-inp" type="password" class="minput" placeholder="AIza..."/>
-      <div style="font-size:11px;color:var(--t3)">Opret gratis på <a href="https://console.cloud.google.com/apis/library/vision.googleapis.com" target="_blank" style="color:var(--acc)">console.cloud.google.com</a> → Vision API → Enable → Credentials → Create API Key</div>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn bPri bFull" onclick="saveApiKey()">✓ Gem og start</button>
-      <button class="btn bGh" onclick="skipApiKey()">Spring over (ingen OCR)</button>
-    </div>
-  </div>
-</div>
+<!-- API setup removed - using Tesseract.js -->
 
 <!-- SEARCH BAR -->
 <div id="search-bar">
@@ -461,7 +444,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
         <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
         <div class="mb-sep"></div>
-        <div class="mb-item" onclick="openApiSettings();closeMenus()">⚙ OCR API-nøgle…</div>
       </div>
     </div>
   </div>
@@ -762,10 +744,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   <div class="mdl" style="width:440px">
     <div class="mhd">⚙ OCR API-nøgle <button onclick="closeM('m-api-settings')">✕</button></div>
     <div class="mbd">
-      <div class="mfield"><label>Google Vision API Nøgle</label><input class="minput" id="api-key-update" type="password" placeholder="AIza..."/></div>
-      <div style="font-size:11px;color:var(--t3)">Nøglen gemmes i localStorage i din browser. Opret på <a href="https://console.cloud.google.com/apis/library/vision.googleapis.com" target="_blank" style="color:var(--acc)">Google Cloud Console</a>.</div>
+      <div style="font-size:12px;color:var(--t2)">Appen bruger <b>Tesseract.js</b> til OCR — gratis og uden nøgle. Hvis du ønsker at bruge Google Vision API i stedet (bedre til tætte tabeller og japansk tekst), kan du indtaste din nøgle her.</div>
+      <div class="mfield"><label>Google Vision API Nøgle (valgfrit)</label><input class="minput" id="api-key-update" type="password" placeholder="AIza... (valgfrit)"/></div>
+      <div style="font-size:11px;color:var(--grn)">✓ Tesseract.js er aktiv og kræver ingen nøgle.</div>
     </div>
-    <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-api-settings')">Annuller</button><button class="btn bPri bSm" onclick="updateApiKey()">✓ Gem</button></div>
+    <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-api-settings')">Luk</button><button class="btn bPri bSm" onclick="updateApiKey()">Gem Google-nøgle</button></div>
   </div>
 </div>
 
@@ -962,24 +945,17 @@ const S={
 // API KEY
 // ================================================================
 function initApiKey(){
+  // Load optional Google Vision API key from localStorage
   S.apiKey=localStorage.getItem('ptp_api_key')||'';
-  if(S.apiKey){document.getElementById('api-setup').classList.add('hidden');}
+  // No setup dialog needed — Tesseract.js is used by default
 }
-function saveApiKey(){
-  const v=document.getElementById('api-key-inp').value.trim();
-  if(!v){toast('Indtast en API-nøgle',true);return;}
-  S.apiKey=v;localStorage.setItem('ptp_api_key',v);
-  document.getElementById('api-setup').classList.add('hidden');
-  toast('API-nøgle gemt ✓','ok');
-}
-function skipApiKey(){document.getElementById('api-setup').classList.add('hidden');}
 function openApiSettings(){
-  document.getElementById('api-key-update').value=S.apiKey;openM('m-api-settings');
+  const inp=document.getElementById('api-key-update');if(inp)inp.value=S.apiKey;openM('m-api-settings');
 }
 function updateApiKey(){
   const v=document.getElementById('api-key-update').value.trim();
   S.apiKey=v;if(v)localStorage.setItem('ptp_api_key',v);else localStorage.removeItem('ptp_api_key');
-  closeM('m-api-settings');toast('Gemt ✓','ok');
+  closeM('m-api-settings');toast(v?'Google Vision API gemt ✓':'Tesseract.js bruges (ingen nøgle)','ok');
 }
 
 // ================================================================
@@ -1558,16 +1534,105 @@ async function placeSigOnPage(){
 }
 
 // ================================================================
-// OCR (direct Vision API call)
+// OCR — Tesseract.js (gratis, ingen nøgle)
+// Fallback til Google Vision API hvis nøgle er sat
 // ================================================================
-async function callVisionAPI(base64Image, features=['TEXT_DETECTION','DOCUMENT_TEXT_DETECTION']){
-  if(!S.apiKey){toast('Ingen OCR API-nøgle — gå til Dokument ▾ → OCR API-nøgle',true);return null;}
-  const resp=await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${S.apiKey}`,{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({requests:[{image:{content:base64Image},features:features.map(f=>({type:f,maxResults:1})),imageContext:{languageHints:['da','en','ja']}}]})
+
+// Tesseract worker — initialiseres én gang
+let _tessWorker = null;
+let _tessReady = false;
+let _tessLang = 'dan+eng'; // dansk + engelsk som standard
+
+async function getTessWorker() {
+  if (_tessWorker && _tessReady) return _tessWorker;
+  
+  // Show loading status
+  const status = document.getElementById('mupdf-status');
+  if (status) { status.textContent = '⏳ Indlæser OCR (Tesseract)…'; status.className = 'show'; }
+  
+  try {
+    _tessWorker = await Tesseract.createWorker('dan+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text' && status) {
+          status.textContent = '🔍 OCR: ' + Math.round(m.progress * 100) + '%';
+        }
+      }
+    });
+    _tessReady = true;
+    if (status) { status.textContent = '✓ OCR klar'; status.className = 'show ready'; setTimeout(()=>status.className='', 2500); }
+  } catch(err) {
+    if (status) { status.textContent = '⚠ OCR fejl: ' + err.message; status.className = 'show error'; }
+    throw err;
+  }
+  return _tessWorker;
+}
+
+// Run OCR on a canvas element — returns {text, words:[{text,bbox}]}
+async function runTesseract(canvas) {
+  // If Google Vision API key is set, use that instead (better quality)
+  if (S.apiKey) {
+    return await runVisionAPI(canvas);
+  }
+  
+  const worker = await getTessWorker();
+  const { data } = await worker.recognize(canvas);
+  
+  // Convert Tesseract word format to our internal format
+  const words = [];
+  (data.words || []).forEach(w => {
+    words.push({
+      text: w.text,
+      bbox: { x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }
+    });
   });
-  if(!resp.ok){const err=await resp.json();throw new Error(err.error?.message||'HTTP '+resp.status);}
-  return await resp.json();
+  
+  return { text: data.text, words };
+}
+
+// Google Vision API fallback (only if API key set)
+async function runVisionAPI(canvas) {
+  const b64 = canvas.toDataURL('image/png').split(',')[1];
+  const resp = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${S.apiKey}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ image: { content: b64 },
+      features: [{ type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }],
+      imageContext: { languageHints: ['da','en','ja'] } }] })
+  });
+  if (!resp.ok) { const e = await resp.json(); throw new Error(e.error?.message || 'HTTP ' + resp.status); }
+  const json = await resp.json();
+  const ann = json.responses[0].fullTextAnnotation;
+  const text = ann ? ann.text : '';
+  
+  // Convert Vision API word format
+  const words = [];
+  (ann?.pages || []).forEach(page => (page.blocks || []).forEach(block =>
+    (block.paragraphs || []).forEach(para => (para.words || []).forEach(word => {
+      const wt = (word.symbols || []).map(s => s.text).join('');
+      const v = word.boundingBox.vertices;
+      words.push({ text: wt, bbox: { x0: v[0].x||0, y0: v[0].y||0, x1: v[2].x||0, y1: v[2].y||0 } });
+    }))
+  ));
+  
+  return { text, words };
+}
+
+// Detect page rotation from OCR results
+function detectRotationFromWords(words, canvasWidth, canvasHeight) {
+  if (!words || words.length < 3) return 0;
+  // Sample first several words and check their angle
+  const angles = [];
+  for (let i = 0; i < Math.min(words.length, 10); i++) {
+    const w = words[i];
+    if (!w.bbox) continue;
+    const dx = w.bbox.x1 - w.bbox.x0;
+    const dy = w.bbox.y1 - w.bbox.y0;
+    // Text boxes wider than tall = horizontal text
+    if (Math.abs(dx) > Math.abs(dy) * 2) angles.push(0);
+    else if (dy > 0 && Math.abs(dy) > Math.abs(dx) * 2) angles.push(90);
+  }
+  if (!angles.length) return 0;
+  const avg = angles.reduce((a,b) => a+b, 0) / angles.length;
+  return Math.round(avg / 90) * 90;
 }
 
 async function renderPageForOCR(pdfJsDoc,pageNum,scale,fileObj){
@@ -1582,28 +1647,25 @@ async function renderPageForOCR(pdfJsDoc,pageNum,scale,fileObj){
 }
 
 async function runOCR(){
-  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];
-  const btns=['btn-teocr'].map(id=>document.getElementById(id)).filter(Boolean);
-  btns.forEach(b=>{b.disabled=true;b.innerHTML='<span class="spin"></span>';});
+  const btn=document.getElementById('btn-teocr');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
   try{
     const off=await renderPageForOCR(f.pdfJsDoc,S.page,2.5,f);
-    const b64=off.toDataURL('image/png').split(',')[1];
-    const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);
-    if(!json)return;
-    const result=json.responses[0];
-    const text=result.fullTextAnnotation?.text||result.textAnnotations?.[0]?.description||'(ingen tekst)';
+    const result=await runTesseract(off);
+    const text=result.text||(result.words||[]).map(w=>w.text).join(' ')||'(ingen tekst)';
     switchRT('te');const wrap=document.getElementById('te-blocks');
     const block=document.createElement('div');block.className='te-b';
     block.innerHTML=`<div class="te-bh"><span>OCR — side ${S.page}</span><button class="btn bXs bGh" onclick="navigator.clipboard.writeText(this.closest('.te-b').querySelector('textarea').value).then(()=>toast('Kopieret ✓','ok'))">📋</button></div><textarea class="te-ta" rows="10">${escH(text)}</textarea>`;
     if(wrap.querySelector('.te-empty'))wrap.innerHTML='';wrap.insertBefore(block,wrap.firstChild);
     toast('OCR færdig ✓','ok');
   }catch(err){toast('OCR fejl: '+err.message,true);}
-  btns.forEach(b=>{b.disabled=false;b.innerHTML='🔍 OCR';});
+  if(btn){btn.disabled=false;btn.innerHTML='🔍 OCR';}
 }
 
 async function runOCRSearch(){
-  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];const term=document.getElementById('ocr-search-inp').value.trim();
   if(!term){toast('Angiv søgeord',true);return;}
   const results=document.getElementById('ocr-search-results');results.innerHTML='<div style="color:var(--t3);font-size:11px">Søger…</div>';
@@ -1633,10 +1695,11 @@ async function runOCRSearch(){
 
 async function runBulkOCRSearch(){
   const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
-  if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
   const globalTerm=document.getElementById('ocr-bulk-term').value.trim();const useBm=document.getElementById('ocr-use-bm').checked;
   const results=document.getElementById('ocr-bulk-results');results.innerHTML='';
   showProgress('OCR Overstrekning',0,files.length);
+  // Pre-initialize Tesseract worker
+  try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;}
   for(let fi=0;fi<files.length;fi++){
     if(S._cancelProgress)break;const f=files[fi];const fileIdx=S.files.indexOf(f);
     const term=useBm&&f._existingBms.length>0?f._existingBms[0].title:globalTerm;
@@ -1648,18 +1711,21 @@ async function runBulkOCRSearch(){
       for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
         if(S._cancelProgress)break;
         const off=await renderPageForOCR(f.pdfJsDoc,pg,2.5,f);
-        const b64=off.toDataURL('image/png').split(',')[1];
-        const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);if(!json)continue;
-        const ann=json.responses[0].fullTextAnnotation;if(!ann)continue;
+        const result=await runTesseract(off);
         const termLow=term.toLowerCase();
-        (ann.pages||[]).forEach(page=>(page.blocks||[]).forEach(block=>(block.paragraphs||[]).forEach(para=>(para.words||[]).forEach(word=>{
-          const wordText=(word.symbols||[]).map(s=>s.text).join('').toLowerCase();
-          if(wordText.includes(termLow)){
-            const verts=word.boundingBox.vertices;
-            getAnnos(fileIdx,pg).push({type:'redact',x:verts[0].x||0,y:verts[0].y||0,w:(verts[1].x||0)-(verts[0].x||0),h:(verts[2].y||0)-(verts[0].y||0),color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:2.5});
+        const ocrScale=2.5;
+        (result.words||[]).forEach(w=>{
+          if(w.text.toLowerCase().includes(termLow)){
+            getAnnos(fileIdx,pg).push({
+              type:'redact',
+              x:w.bbox.x0,y:w.bbox.y0,
+              w:Math.max(w.bbox.x1-w.bbox.x0,10),
+              h:Math.max(w.bbox.y1-w.bbox.y0,10),
+              color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:ocrScale
+            });
             found++;
           }
-        }))));
+        });
       }
       f._hasOcr=found>0;
       const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';results.appendChild(item);
@@ -1669,35 +1735,28 @@ async function runBulkOCRSearch(){
 }
 
 async function autoRotatePage(){
-  if(S.activeIdx<0)return;if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
+  if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];toast('Analyserer tekstretning…');
   try{
     const page=await f.pdfJsDoc.getPage(S.page);const vp=page.getViewport({scale:1.5,rotation:0});
     const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
     await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
-    const json=await callVisionAPI(off.toDataURL('image/png').split(',')[1],['DOCUMENT_TEXT_DETECTION']);if(!json)return;
-    const ann=json.responses[0].fullTextAnnotation;
-    if(!ann){toast('Ingen tekst fundet til rotation-detektion');return;}
-    let rotation=0;
-    try{
-      const pages=ann.pages;if(pages&&pages[0]&&pages[0].blocks&&pages[0].blocks[0]){
-        const verts=pages[0].blocks[0].boundingBox.vertices;const dx=verts[1].x-verts[0].x;const dy=verts[1].y-verts[0].y;
-        const angle=Math.atan2(dy,dx)*180/Math.PI;
-        if(Math.abs(angle)<30)rotation=0;else if(angle>30&&angle<120)rotation=90;else if(Math.abs(angle)>120)rotation=180;else rotation=270;
-      }
-    }catch{}
+    const result=await runTesseract(off);
+    const rotation=detectRotationFromWords(result.words,off.width,off.height);
     if(!rotation){toast('Side allerede korrekt orienteret ✓','ok');}
     else{
-      if(!f.pageRotations)f.pageRotations={};f.pageRotations[S.page]=(f.pageRotations[S.page]||0)+rotation;
-      f._hasRotation=true;await renderPage();renderFileList();toast(`Roteret ${rotation}° ✓`,'ok');
+      if(!f.pageRotations)f.pageRotations={};
+      f.pageRotations[S.page]=(f.pageRotations[S.page]||0)+rotation;
+      f._hasRotation=true;await renderPage();renderFileList();
+      toast('Roteret '+rotation+'° ✓','ok');
     }
   }catch(err){toast('Fejl: '+err.message,true);}
 }
 
 async function autoRotateAll(){
   const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
-  if(!S.apiKey){toast('Ingen OCR API-nøgle',true);return;}
   showProgress('Auto-Roter OCR',0,files.length);
+  try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;}
   for(let fi=0;fi<files.length;fi++){
     if(S._cancelProgress)break;const f=files[fi];updateProgress(fi+1,files.length,f.name);
     try{
@@ -1708,16 +1767,9 @@ async function autoRotateAll(){
         const page=await f.pdfJsDoc.getPage(pg);const vp=page.getViewport({scale:0.8,rotation:0});
         const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
         await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
-        const json=await callVisionAPI(off.toDataURL('image/jpeg',0.7).split(',')[1],['DOCUMENT_TEXT_DETECTION']);if(!json)continue;
-        const ann=json.responses[0].fullTextAnnotation;if(!ann)continue;
-        try{
-          const pages=ann.pages;if(pages&&pages[0]&&pages[0].blocks&&pages[0].blocks[0]){
-            const verts=pages[0].blocks[0].boundingBox.vertices;const dx=verts[1].x-verts[0].x;const dy=verts[1].y-verts[0].y;
-            const angle=Math.atan2(dy,dx)*180/Math.PI;let rotation=0;
-            if(Math.abs(angle)<30)rotation=0;else if(angle>30&&angle<120)rotation=90;else if(Math.abs(angle)>120)rotation=180;else rotation=270;
-            if(rotation){f.pageRotations[pg]=rotation;f._hasRotation=true;}
-          }
-        }catch{}
+        const result=await runTesseract(off);
+        const rotation=detectRotationFromWords(result.words,off.width,off.height);
+        if(rotation){f.pageRotations[pg]=rotation;f._hasRotation=true;}
       }
     }catch(e){}
   }
