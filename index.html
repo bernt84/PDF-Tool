@@ -239,10 +239,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 #pb-fill{height:100%;background:var(--acc);border-radius:4px;transition:width .2s;width:0}
 
 /* ── MUPDF STATUS ── */
-#mupdf-status{position:fixed;bottom:60px;right:16px;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);padding:8px 14px;font-size:11px;color:var(--t3);z-index:400;display:none}
-#mupdf-status.show{display:flex;align-items:center;gap:8px}
-#mupdf-status.ready{color:var(--grn);border-color:rgba(34,197,94,.3)}
-#mupdf-status.error{color:var(--red);border-color:rgba(239,68,68,.3)}
+/* mupdf-status removed - using ai-ready-badge */
 
 /* ── SEARCH BAR ── */
 #search-bar{position:fixed;top:56px;right:16px;z-index:300;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);padding:8px 10px;display:none;align-items:center;gap:6px;box-shadow:0 4px 20px rgba(0,0,0,.5)}
@@ -426,7 +423,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 </div>
 
 <!-- MUPDF STATUS -->
-<div id="mupdf-status"><span class="spin"></span> Indlæser MuPDF WASM…</div>
+
 
 <div id="app">
 <!-- TOPBAR -->
@@ -812,18 +809,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="list-mode">
   <div id="list-tb">
     <input id="list-srch" type="text" placeholder="Søg filnavn…" oninput="renderListMode()"/>
-    <button class="btn bGh bSm" onclick="selAll();renderListMode()">☑ Alle</button>
-    <button class="btn bGh bSm" onclick="selNone();renderListMode()">☐ Ingen</button>
-    <button class="btn bDng bSm" onclick="deleteSelected()">🗑 Slet markerede</button>
+    <button class="btn bGh bSm" onclick="selAll();renderListMode()" title="Vælg alle">☑ Alle</button>
+    <button class="btn bGh bSm" onclick="selNone();renderListMode()" title="Fravælg alle">☐ Ingen</button>
+    <button class="btn bDng bSm" onclick="deleteSelected()" title="Slet markerede filer">🗑 Slet</button>
     <div class="vsep"></div>
-    <button class="btn bGh bSm" onclick="analyzeBulk()">🔍 Analyser</button>
-    <button class="btn bGh bSm" onclick="openM('m-bbm')">🔖 Bogmærk</button>
-    <button class="btn bGh bSm" onclick="bulkRotate()">↻ Roter 90°</button>
-    <button class="btn bGh bSm" onclick="autoRotateAll()">↻ Auto-Roter OCR</button>
-    <button class="btn bGh bSm" onclick="openM('m-ocr-bulk')">🔍 OCR Overstrekning</button>
-    <button class="btn bGh bSm" onclick="openM('m-pagenum')"># Sidetal</button>
-    <button class="btn bCyn bSm" onclick="openMergeModal()">⊕ Merge</button>
-    <button class="btn bSuc bSm" onclick="smartDownload()">⬇ Download</button>
+    <button class="btn bGh bSm" onclick="analyzeBulk()" title="Analyser bogmærker i markerede filer">🔍 Analyser</button>
+    <button class="btn bGh bSm" onclick="openM('m-bbm')" title="Sæt bogmærker på markerede filer">🔖 Bogmærk</button>
+    <button class="btn bGh bSm" onclick="openM('m-ocr-bulk')" title="OCR overstrekning på markerede filer">👁 OCR Overstreg</button>
+    <div class="vsep"></div>
+    <button class="btn bCyn bSm" onclick="openMergeModal()" title="Merge markerede filer til én PDF">⊕ Merge</button>
+    <button class="btn bSuc bSm" onclick="smartDownload()" title="Download markerede filer">⬇ Download</button>
   </div>
   <div id="list-wrap"><div id="list-cont"></div></div>
 </div>
@@ -1640,7 +1635,7 @@ let _tessLang = 'dan+eng'; // dansk + engelsk som standard
 async function getTessWorker() {
   if (_tessWorker && _tessReady) return _tessWorker;
   
-  const status = document.getElementById('mupdf-status');
+  const status = document.getElementById('ai-ready-badge');
   if (status) { status.textContent = '⏳ Indlæser OCR…'; status.className = 'show'; }
   
   // Check Tesseract is loaded
@@ -1757,7 +1752,7 @@ async function runOCR(){
   const btn=document.getElementById('btn-teocr');
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
   try{
-    const off=await renderPageForOCR(f.pdfJsDoc,S.page,2.5,f);
+    const off=await renderPageForOCR(f.pdfJsDoc,S.page,1.5,f);
     const result=await runTesseract(off);
     const text=result.text||(result.words||[]).map(w=>w.text).join(' ')||'(ingen tekst)';
     switchRT('te');const wrap=document.getElementById('te-blocks');
@@ -1771,31 +1766,69 @@ async function runOCR(){
 
 async function runOCRSearch(){
   if(S.activeIdx<0)return;
-  const f=S.files[S.activeIdx];const term=document.getElementById('ocr-search-inp').value.trim();
+  const f=S.files[S.activeIdx];
+  const term=document.getElementById('ocr-search-inp').value.trim();
   if(!term){toast('Angiv søgeord',true);return;}
-  const results=document.getElementById('ocr-search-results');results.innerHTML='<div style="color:var(--t3);font-size:11px">Søger…</div>';
+  const results=document.getElementById('ocr-search-results');
+  results.innerHTML='<div style="color:var(--t3);font-size:11px">Søger…</div>';
   try{
-    const ocrScale=3.0;const off=await renderPageForOCR(f.pdfJsDoc,S.page,ocrScale,f);
-    const b64=off.toDataURL('image/png').split(',')[1];
-    const json=await callVisionAPI(b64,['DOCUMENT_TEXT_DETECTION']);
-    if(!json)return;
-    const resp=json.responses[0];
-    const ann=resp.fullTextAnnotation;if(!ann){results.innerHTML='<div class="ocr-ri ocr-fail">Ingen tekst fundet</div>';return;}
-    const termLow=term.toLowerCase();const boxes=[];
-    (ann.pages||[]).forEach(page=>(page.blocks||[]).forEach(block=>(block.paragraphs||[]).forEach(para=>(para.words||[]).forEach(word=>{
-      const wordText=(word.symbols||[]).map(s=>s.text).join('').toLowerCase();
-      if(wordText.includes(termLow)){
-        const verts=word.boundingBox.vertices;
-        boxes.push({x:verts[0].x||0,y:verts[0].y||0,w:(verts[1].x||0)-(verts[0].x||0),h:(verts[2].y||0)-(verts[0].y||0)});
-      }
-    }))));
-    if(!boxes.length){results.innerHTML='<div class="ocr-ri ocr-fail">⚠ Ikke fundet på side '+S.page+'</div>';return;}
-    const annos=getAnnos(S.activeIdx,S.page);const dpr=window.devicePixelRatio;const sr=(S.zoom*dpr)/ocrScale;
-    boxes.forEach(box=>annos.push({type:'redact',x:box.x*sr,y:box.y*sr,w:Math.max(box.w*sr,10),h:Math.max(box.h*sr,10),color:S.redactColor,strokeSize:1,opacity:1}));
+    const termLow=term.toLowerCase();
+    const annos=getAnnos(S.activeIdx,S.page);
+    const dpr=window.devicePixelRatio;
+    let found=0;
+    let method='';
+
+    // FAST PATH: PDF tekst-lag — øjeblikkeligt, ingen OCR
+    const pdfPage=await f.pdfJsDoc.getPage(S.page);
+    const textContent=await pdfPage.getTextContent();
+    const hasText=textContent.items.some(item=>item.str&&item.str.toLowerCase().includes(termLow));
+
+    if(hasText){
+      method='tekst-lag';
+      const vp=pdfPage.getViewport({scale:S.zoom});
+      textContent.items.forEach(item=>{
+        if(!item.str||!item.str.toLowerCase().includes(termLow))return;
+        const tx=item.transform;
+        const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
+        const iw=Math.max((item.width||40)*S.zoom,10);
+        const ih=Math.max((item.height||12)*S.zoom*1.5,10);
+        annos.push({type:'redact',
+          x:vPt[0]*dpr, y:(vPt[1]-ih)*dpr,
+          w:iw*dpr, h:ih*dpr,
+          color:S.redactColor,strokeSize:1,opacity:1});
+        found++;
+      });
+    } else {
+      // SLOW PATH: Scannet PDF — brug Tesseract OCR
+      results.innerHTML='<div style="color:var(--t3);font-size:11px">Scannet side — starter OCR…</div>';
+      method='OCR';
+      const ocrScale=2.0;
+      const off=await renderPageForOCR(f.pdfJsDoc,S.page,ocrScale,f);
+      const result=await runTesseract(off);
+      const sr=(S.zoom*dpr)/ocrScale;
+      (result.words||[]).forEach(w=>{
+        if(!w.text||!w.text.toLowerCase().includes(termLow))return;
+        annos.push({type:'redact',
+          x:w.bbox.x0*sr,y:w.bbox.y0*sr,
+          w:Math.max((w.bbox.x1-w.bbox.x0)*sr,10),
+          h:Math.max((w.bbox.y1-w.bbox.y0)*sr,10),
+          color:S.redactColor,strokeSize:1,opacity:1});
+        found++;
+      });
+    }
+
+    results.innerHTML='';
+    if(!found){
+      results.innerHTML=`<div class="ocr-ri ocr-fail">⚠ "${escH(term)}" ikke fundet på side ${S.page}</div>`;
+      return;
+    }
     redrawAnnos();renderAnnoList();markOcrDone(S.activeIdx);
-    const el=document.createElement('div');el.className='ocr-ri ocr-ok';el.textContent='✓ '+boxes.length+' fund på side '+S.page;results.appendChild(el);
-    results.firstChild.remove(); // remove "Søger…"
-  }catch(err){results.innerHTML=`<div class="ocr-ri ocr-fail">Fejl: ${escH(err.message)}</div>`;}
+    const el=document.createElement('div');el.className='ocr-ri ocr-ok';
+    el.textContent=`✓ ${found} fund på side ${S.page} (${method})`;
+    results.appendChild(el);
+  }catch(err){
+    results.innerHTML=`<div class="ocr-ri ocr-fail">Fejl: ${escH(err.message)}</div>`;
+  }
 }
 
 async function runBulkOCRSearch(){
@@ -1815,22 +1848,49 @@ async function runBulkOCRSearch(){
       let found=0;
       for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
         if(S._cancelProgress)break;
-        const off=await renderPageForOCR(f.pdfJsDoc,pg,2.5,f);
-        const result=await runTesseract(off);
+        updateProgress(fi+1,files.length,f.name+' — side '+pg+'/'+f.pdfJsDoc.numPages);
         const termLow=term.toLowerCase();
-        const ocrScale=2.5;
-        (result.words||[]).forEach(w=>{
-          if(w.text.toLowerCase().includes(termLow)){
+        
+        // FAST PATH: Try PDF text layer first (instant, no OCR needed)
+        const pdfPage=await f.pdfJsDoc.getPage(pg);
+        const textContent=await pdfPage.getTextContent();
+        const hasText=textContent.items.some(item=>item.str&&item.str.toLowerCase().includes(termLow));
+        
+        if(hasText){
+          // Found in text layer — place redact boxes using PDF coords
+          const vp=pdfPage.getViewport({scale:1.0});
+          textContent.items.forEach(item=>{
+            if(!item.str||!item.str.toLowerCase().includes(termLow))return;
+            const tx=item.transform;
+            const vPt=vp.convertToViewportPoint(tx[4],tx[5]);
+            const w=Math.max((item.width||50),10);
+            const h=Math.max((item.height||12)*1.3,10);
+            const dpr=window.devicePixelRatio;
             getAnnos(fileIdx,pg).push({
-              type:'redact',
-              x:w.bbox.x0,y:w.bbox.y0,
-              w:Math.max(w.bbox.x1-w.bbox.x0,10),
-              h:Math.max(w.bbox.y1-w.bbox.y0,10),
-              color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:ocrScale
+              type:'redact',x:vPt[0]*S.zoom*dpr,y:(vPt[1]-h*S.zoom)*dpr,
+              w:w*S.zoom*dpr,h:h*S.zoom*dpr*1.5,
+              color:S.redactColor,strokeSize:1,opacity:1
             });
             found++;
-          }
-        });
+          });
+        } else {
+          // SLOW PATH: No text layer — use OCR (scanned page)
+          const off=await renderPageForOCR(f.pdfJsDoc,pg,1.2,f);
+          const result=await runTesseract(off);
+          const ocrScale=1.2;
+          (result.words||[]).forEach(w=>{
+            if(w.text.toLowerCase().includes(termLow)){
+              getAnnos(fileIdx,pg).push({
+                type:'redact',
+                x:w.bbox.x0,y:w.bbox.y0,
+                w:Math.max(w.bbox.x1-w.bbox.x0,10),
+                h:Math.max(w.bbox.y1-w.bbox.y0,10),
+                color:S.redactColor,strokeSize:1,opacity:1,_ocrScale:ocrScale
+              });
+              found++;
+            }
+          });
+        }
       }
       if(found>0)markOcrDone(fileIdx);
       const item=document.createElement('div');item.className=`ocr-ri ${found>0?'ocr-ok':'ocr-fail'}`;item.textContent=(found>0?'✓ ':'⚠ ')+f.name+': '+found+' fund';results.appendChild(item);
@@ -1843,7 +1903,7 @@ async function autoRotatePage(){
   if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];toast('Analyserer tekstretning…');
   try{
-    const page=await f.pdfJsDoc.getPage(S.page);const vp=page.getViewport({scale:1.5,rotation:0});
+    const page=await f.pdfJsDoc.getPage(S.page);const vp=page.getViewport({scale:0.8,rotation:0});
     const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
     await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
     const result=await runTesseract(off);
