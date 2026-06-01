@@ -563,7 +563,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <button class="btn bIcon bSm" onclick="togglePageMgr()">⊞</button>
   </div>
   <div class="sp"></div>
-  <button class="btn bGh bSm" id="tb-textedit" disabled onclick="toggleTextEdit()" title="Rediger tekst direkte i PDF">✎ Rediger tekst</button>
   <button class="btn bAmb bSm" id="tb-sug" disabled onclick="showFnSuggest()">📄 Omdøb</button>
   <button class="btn bSuc bSm" id="tb-save" disabled onclick="smartDownload()">⬇ Download</button>
 </div>
@@ -586,6 +585,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="setTool('circle');closeMenus()"><span>○</span> Cirkel</div>
         <div class="mb-item" onclick="setTool('line');closeMenus()"><span>╱</span> Linje</div>
         <div class="mb-item" onclick="setTool('arrow');closeMenus()"><span>→</span> Pil</div>
+        <div class="mb-sep"></div>
+        <div class="mb-sep"></div>
+        <div class="mb-item" onclick="toggleTextEdit();closeMenus()"><span>✎</span> Rediger tekst (MuPDF)</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="undoAnno();closeMenus()">↩ Fortryd</div>
         <div class="mb-item" onclick="clearPageAnnos();closeMenus()">🗑 Ryd side</div>
@@ -1421,9 +1423,9 @@ async function openFile(idx){
     if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
     if(!f.pdfLibDoc){prog(60);f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});}
     S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
-    await renderPage();renderFileList();await loadBms(f);loadMeta(f);
+    await renderAllPagesWithFit();renderFileList();await loadBms(f);loadMeta(f);
     if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
-    ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
+    ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
       .forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=false;});
     document.getElementById('te-pgnum').textContent=S.page;
     if(S._compareOpen)populateCompareSelects();
@@ -2874,7 +2876,7 @@ function clearAll(){
   document.getElementById('te-blocks').innerHTML='<div class="te-empty">Klik "Hent tekst" eller "Formular"</div>';
   document.getElementById('pn-tot').textContent='/ —';document.getElementById('pn-inp').value=1;
   document.getElementById('pt-list').innerHTML='';document.getElementById('cv-sizer').style.display='none';
-  ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
+  ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
   showEmpty(true);closeFnBox();cancelBmEdit();
   document.getElementById('txt-overlay').innerHTML='';document.getElementById('txt-overlay').style.pointerEvents='none';
   document.getElementById('search-overlay').innerHTML='';
@@ -3701,8 +3703,7 @@ const MuEditor = {
 
     this.active = true;
     document.getElementById('te-edit-bar').classList.add('active');
-    document.getElementById('tb-textedit').style.background = 'rgba(59,130,246,.2)';
-    document.getElementById('tb-textedit').style.color = 'var(--acc)';
+    
 
     await this.loadPage();
   },
@@ -3711,8 +3712,7 @@ const MuEditor = {
     this.active = false;
     this.blocks = [];
     document.getElementById('te-edit-bar').classList.remove('active');
-    const btn = document.getElementById('tb-textedit');
-    if (btn) { btn.style.background = ''; btn.style.color = ''; }
+
     this._clearOverlay();
   },
 
@@ -4017,6 +4017,20 @@ function initPageScrollTracker(){
       updateNavUI();
     }
   }, {passive:true});
+}
+
+
+async function renderAllPagesWithFit(){
+  if(S.activeIdx<0)return;
+  // Calculate fit-width zoom first
+  const f=S.files[S.activeIdx];
+  const page=await f.pdfJsDoc.getPage(1);
+  const vp=page.getViewport({scale:1});
+  const cont=document.getElementById('cv-container');
+  const availW=cont.clientWidth-28;
+  S.zoom=Math.min(availW/vp.width, 2.5);
+  document.getElementById('zoom-lbl').textContent=Math.round(S.zoom*100)+'%';
+  await renderAllPages();
 }
 
 // Wire up label file inputs
