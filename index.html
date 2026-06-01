@@ -1432,6 +1432,8 @@ async function openFile(idx){
   S.activeIdx=idx;S.page=1;S.zoom=1.0;
   S.rotation=S.files[idx]._viewRotation||0;
   S.customFn=null;closeFnBox();cancelBmEdit();
+  // Clear text editor when switching files
+  if(TE.active){TE.active=false;teClearOverlay();document.getElementById('te-edit-bar').classList.remove('active');}
   prog(20);const f=S.files[idx];
   try{
     if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
@@ -4141,6 +4143,38 @@ document.addEventListener('keydown', e => {
   }
 });
 
+
+// Live preview of text edit on anno canvas
+function tePreviewChange(teItem) {
+  const av = document.getElementById('anno-canvas');
+  if (!av || !av.width) return;
+  const ctx = av.getContext('2d');
+  const dpr = window.devicePixelRatio;
+
+  if (teItem.deleted) {
+    // White out
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(teItem.vx * dpr, (teItem.vy) * dpr, (teItem.vw + 4) * dpr, (teItem.vfs * 1.4) * dpr);
+    return;
+  }
+
+  if (teItem.newText === teItem.origText) {
+    // Undo - redraw annos to clear preview
+    redrawAnnos();
+    return;
+  }
+
+  // White out original area
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(teItem.vx * dpr - 2, teItem.vy * dpr - 2, (teItem.vw + 8) * dpr, (teItem.vfs * 1.6) * dpr);
+
+  // Draw new text
+  ctx.fillStyle = '#000';
+  ctx.font = `${teItem.vfs * dpr}px ${teItem.fontName || 'sans-serif'}`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(teItem.newText, teItem.vx * dpr, teItem.vy * dpr);
+}
+
 // Wire up label file inputs
 ['file-input-topbar','file-input-empty'].forEach(function(id){
   var el=document.getElementById(id);
@@ -4237,9 +4271,10 @@ async function teLoadPage() {
           teItem.newText = el.value;
           el.classList.toggle('modified', el.value !== teItem.origText);
           el.style.height = teItem.vh + 'px';
+          tePreviewChange(teItem);
           const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
           document.getElementById('te-edit-info').textContent =
-            mods > 0 ? `${mods} ændring(er) — gemmes ved download` : 'Klik på tekst for at redigere';
+            mods > 0 ? `${mods} ændret ✓` : 'Klik på tekst for at redigere';
         });
         el.addEventListener('keydown', e => {
           if (e.key === 'Escape') { el.value = teItem.origText; teItem.newText = teItem.origText; el.blur(); }
@@ -4312,9 +4347,11 @@ async function teLoadPage() {
       el.classList.toggle('modified', changed);
       el.style.height = vh + 'px';
       if (changed) modCount++;
+      // Live preview
+      tePreviewChange(teItem);
       const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
       document.getElementById('te-edit-info').textContent =
-        mods > 0 ? `${mods} tekstelement(er) ændret — gemmes ved download` : 'Klik på tekst for at redigere';
+        mods > 0 ? `${mods} ændret ✓` : 'Klik på tekst for at redigere';
     });
 
     el.addEventListener('keydown', e => {
