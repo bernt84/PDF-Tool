@@ -4193,34 +4193,32 @@ function tePreviewChange(teItem) {
   TE.items.forEach(item => {
     if (item.newText === item.origText && !item.deleted) return;
 
-    // White-out
+    // White-out — cover original text completely
+    // vy is bottom of text in css pixels, go up by vfs to cover full height
+    const wx = item.vx * dpr - 2;
+    const wy = (item.vy - item.vfs * 1.1) * dpr;
+    const ww = (item.vw + 8) * dpr;
+    const wh = (item.vfs * 1.4) * dpr;
+
     annos.push({
       type: 'redact',
-      x: item.vx * dpr - 1,
-      y: item.vy * dpr - 1,
-      w: (item.vw + 6) * dpr,
-      h: (item.vfs * 1.7) * dpr,
+      x: wx, y: wy, w: ww, h: wh,
       color: '#ffffff',
-      opacity: 1,
-      strokeSize: 0,
-      _tePreview: true,
-      _teIdx: item.idx,
+      opacity: 1, strokeSize: 0,
+      _tePreview: true, _teIdx: item.idx,
     });
 
     if (!item.deleted && item.newText) {
       annos.push({
         type: 'text',
-        x: item.vx * dpr,
-        y: item.vy * dpr,
-        w: (item.vw + 6) * dpr,
-        h: (item.vfs * 1.7) * dpr,
+        x: wx + 1,
+        y: wy + 1,
+        w: ww, h: wh,
         text: item.newText,
         color: '#111111',
-        fontSize: item.vfs,
-        opacity: 1,
-        strokeSize: 0,
-        _tePreview: true,
-        _teIdx: item.idx,
+        fontSize: item.vfs * 0.88,
+        opacity: 1, strokeSize: 0,
+        _tePreview: true, _teIdx: item.idx,
       });
     }
   });
@@ -4328,10 +4326,21 @@ async function teLoadPage() {
           el.style.height = 'auto';
           document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
           // Temporarily remove preview for this item so canvas is clean
+          // Clear ALL preview annos on focus so canvas is clean
           const annos = getAnnos(S.activeIdx, S.page);
-          const filtered = annos.filter(a => !(a._tePreview && a._teIdx === teItem.idx));
+          const filtered = annos.filter(a => !a._tePreview);
           annos.length = 0;
           filtered.forEach(a => annos.push(a));
+          // Redraw other items' previews but not this one
+          TE.items.forEach(other => {
+            if (other.idx === teItem.idx) return;
+            if (other.newText === other.origText && !other.deleted) return;
+            const d = window.devicePixelRatio;
+            const ox = other.vx*d-2, oy=(other.vy-other.vfs*1.1)*d;
+            const ow=(other.vw+8)*d, oh=(other.vfs*1.4)*d;
+            annos.push({type:'redact',x:ox,y:oy,w:ow,h:oh,color:'#ffffff',opacity:1,strokeSize:0,_tePreview:true,_teIdx:other.idx});
+            if (!other.deleted && other.newText) annos.push({type:'text',x:ox+1,y:oy+1,w:ow,h:oh,text:other.newText,color:'#111111',fontSize:other.vfs*0.88,opacity:1,strokeSize:0,_tePreview:true,_teIdx:other.idx});
+          });
           redrawAnnos();
         });
         el.addEventListener('blur', () => {
