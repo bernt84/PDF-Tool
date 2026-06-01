@@ -3346,8 +3346,17 @@ self.onmessage = async function(e) {
         const blocks = [];
 
         // Get structured text
-        const stext = page.toStructuredText('preserve-whitespace');
-        const json = JSON.parse(stext.asJSON());
+        let json;
+        try {
+          const stext = page.toStructuredText('preserve-whitespace');
+          const jsonStr = stext.asJSON();
+          json = JSON.parse(jsonStr);
+          // Debug: post raw structure
+          self.postMessage({type:'debug', msg: 'stext blocks: ' + (json.blocks||[]).length + ' raw: ' + jsonStr.substring(0,200)});
+        } catch(e) {
+          self.postMessage({type:'debug', msg: 'toStructuredText error: ' + e.message});
+          json = {blocks:[]};
+        }
 
         // json.blocks -> array of blocks with lines
         (json.blocks || []).forEach((block, bi) => {
@@ -3516,6 +3525,7 @@ const MuPDF = {
 
   _handleMessage(e) {
     const {id, type, result, msg} = e.data;
+    if (type === 'debug') { console.log('Worker debug:', msg); return; }
     if (!id) return;
     const cb = this.pendingCalls.get(id);
     if (!cb) return;
