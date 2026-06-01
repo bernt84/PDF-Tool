@@ -1421,7 +1421,7 @@ async function openFile(idx){
     if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
     if(!f.pdfLibDoc){prog(60);f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});}
     S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
-    await renderPage();renderFileList();await loadBms(f);loadMeta(f);
+    await renderPage();await new Promise(r=>setTimeout(r,50));zoomFit();renderFileList();await loadBms(f);loadMeta(f);
     if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
     ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
       .forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=false;});
