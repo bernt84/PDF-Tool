@@ -3921,7 +3921,84 @@ async function teLoadPage() {
   overlay.style.pointerEvents = 'all';
   console.log('overlay ready:', overlay, 'content items:', content.items.length);
 
-  const items = content.items.filter(i => i.str && i.str.trim().length > 0);
+  let items = content.items.filter(i => i.str && i.str.trim().length > 0);
+
+  // If no text layer — use Tesseract OCR as fallback
+  if (!items.length) {
+    document.getElementById('te-edit-info').textContent = '🔍 Ingen tekst-lag — kører OCR…';
+    try {
+      const ocrCanvas = await renderPageForOCR(f.pdfJsDoc, S.page, 2.0, f);
+      const result = await runTesseract(ocrCanvas);
+      const dpr = window.devicePixelRatio;
+      const scaleDown = S.zoom / 2.0; // OCR was at scale 2.0
+
+      // Convert OCR words to fake text items
+      (result.words || []).forEach(w => {
+        if (!w.text || !w.text.trim()) return;
+        // OCR bbox is in canvas pixels at scale 2.0
+        // Convert to viewport coordinates
+        const vx = w.bbox.x0 * scaleDown;
+        const vy = w.bbox.y0 * scaleDown;
+        const vw = (w.bbox.x1 - w.bbox.x0) * scaleDown;
+        const vh = (w.bbox.y1 - w.bbox.y0) * scaleDown;
+        const vfs = Math.max(6, vh * 0.85);
+
+        const teItem = {
+          origText: w.text,
+          newText: w.text,
+          pdfX: vx / S.zoom, pdfY: vy / S.zoom,
+          fontSize: vfs / S.zoom,
+          fontName: '',
+          vx, vy: vy - vfs * 0.1,
+          vw: Math.max(vw, 20), vh: Math.max(vh, 10), vfs,
+          deleted: false, el: null, idx: TE.items.length,
+          _fromOCR: true,
+        };
+
+        const el = document.createElement('textarea');
+        el.className = 'te-overlay-box';
+        el.value = w.text;
+        el.rows = 1;
+        el.style.cssText = `left:${teItem.vx}px;top:${teItem.vy}px;width:${teItem.vw}px;height:${teItem.vh}px;font-size:${vfs}px;`;
+        el.title = `OCR: "${w.text.substring(0,30)}"`;
+
+        el.addEventListener('focus', () => {
+          el.style.height = 'auto';
+          document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
+        });
+        el.addEventListener('blur', () => {
+          teItem.newText = el.value;
+          el.classList.toggle('modified', el.value !== teItem.origText);
+          el.style.height = teItem.vh + 'px';
+          const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
+          document.getElementById('te-edit-info').textContent =
+            mods > 0 ? `${mods} ændring(er) — gemmes ved download` : 'Klik på tekst for at redigere';
+        });
+        el.addEventListener('keydown', e => {
+          if (e.key === 'Escape') { el.value = teItem.origText; teItem.newText = teItem.origText; el.blur(); }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); }
+        });
+        el.addEventListener('dblclick', () => {
+          teItem.deleted = true;
+          el.style.opacity = '0.2';
+          el.style.textDecoration = 'line-through';
+          el.disabled = true;
+        });
+
+        overlay.appendChild(el);
+        teItem.el = el;
+        TE.items.push(teItem);
+      });
+
+      document.getElementById('te-edit-info').textContent =
+        TE.items.length + ' OCR-ord fundet — klik for at redigere';
+      return; // Done via OCR path
+    } catch(e) {
+      document.getElementById('te-edit-info').textContent = '⚠ OCR fejl: ' + e.message;
+      return;
+    }
+  }
+
   let modCount = 0;
 
   items.forEach((item, idx) => {
