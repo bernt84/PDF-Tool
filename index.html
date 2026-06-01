@@ -1527,7 +1527,14 @@ function setColor(c,el){S.color=c;document.querySelectorAll('#menubar .color-pic
 function setRedactColor(c,el){S.redactColor=c;document.querySelectorAll('.redact-cp').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
 function setBulkRC(c,el){S.redactColor=c;document.querySelectorAll('.bulk-rcp').forEach(p=>p.style.border='2px solid transparent');el.style.border='2px solid #fff';}
 
-function setupAnnoEvents(){const av=document.getElementById('anno-canvas');if(!av)return;av.onmousedown=startDraw;av.onmousemove=moveDraw;av.onmouseup=endDraw;av.onmouseleave=endDraw;}
+function setupAnnoEvents(){
+  const av=document.getElementById('anno-canvas');if(!av)return;
+  av.onmousedown=startDraw;
+  av.onmousemove=moveDraw;
+  av.onmouseup=endDraw;
+  av.onmouseleave=endDraw;
+  av.onclick=selectAnno;
+}
 function canvasCoords(e){const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();const dpr=window.devicePixelRatio;return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr};}
 function startDraw(e){if(S.tool==='select')return;if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
 function moveDraw(e){
@@ -3876,6 +3883,183 @@ function mpvRotatePage() {
   toast('Side ' + MPV.page + ' roteret 90° ✓', 'ok');
 }
 
+
+// ================================================================
+// ANNOTATION SELECTION + MOVE
+// ================================================================
+let _selAnnoIdx = -1;
+let _annoDrag = null;
+
+function selectAnno(e) {
+  if (S.tool !== 'select') return;
+  const av = document.getElementById('anno-canvas');
+  const dpr = window.devicePixelRatio;
+  const r = av.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * dpr;
+  const my = (e.clientY - r.top) * dpr;
+
+  const annos = getAnnos(S.activeIdx, S.page);
+  // Find clicked annotation (reverse order = top first)
+  let found = -1;
+  for (let i = annos.length - 1; i >= 0; i--) {
+    const a = annos[i];
+    if (hitTestAnno(a, mx, my)) { found = i; break; }
+  }
+
+  _selAnnoIdx = found;
+  redrawAnnos();
+
+  if (found >= 0) {
+    // Draw selection handles
+    drawSelectionHandles(annos[found]);
+    toast('Annotation valgt — træk for at flytte, Delete for at slette');
+  }
+}
+
+function hitTestAnno(a, mx, my) {
+  const pad = 8;
+  switch(a.type) {
+    case 'highlight': case 'redact': case 'rect': case 'image':
+      return mx >= a.x-pad && mx <= a.x+a.w+pad && my >= a.y-pad && my <= a.y+a.h+pad;
+    case 'circle':
+      return mx >= a.x-pad && mx <= a.x+a.w+pad && my >= a.y-pad && my <= a.y+a.h+pad;
+    case 'line': case 'arrow': {
+      // Distance from point to line
+      const dx = a.x2-a.x1, dy = a.y2-a.y1;
+      const len = Math.sqrt(dx*dx+dy*dy);
+      if(len < 1) return false;
+      const dist = Math.abs((my-a.y1)*dx - (mx-a.x1)*dy) / len;
+      return dist < 12;
+    }
+    case 'pen': {
+      if (!a.points || !a.points.length) return false;
+      const xs = a.points.map(p=>p.x), ys = a.points.map(p=>p.y);
+      const minX = Math.min(...xs)-pad, maxX = Math.max(...xs)+pad;
+      const minY = Math.min(...ys)-pad, maxY = Math.max(...ys)+pad;
+      return mx>=minX && mx<=maxX && my>=minY && my<=maxY;
+    }
+    case 'text':
+      return mx >= a.x-pad && mx <= a.x+a.w+pad && my >= a.y-pad && my <= a.y+a.h+pad;
+    default: return false;
+  }
+}
+
+function drawSelectionHandles(a) {
+  const av = document.getElementById('anno-canvas');
+  const ctx = av.getContext('2d');
+  const dpr = window.devicePixelRatio;
+  let x, y, w, h;
+
+  if (a.type === 'line' || a.type === 'arrow') {
+    x = Math.min(a.x1,a.x2)-8; y = Math.min(a.y1,a.y2)-8;
+    w = Math.abs(a.x2-a.x1)+16; h = Math.abs(a.y2-a.y1)+16;
+  } else if (a.type === 'pen') {
+    const xs = a.points.map(p=>p.x), ys = a.points.map(p=>p.y);
+    x = Math.min(...xs)-8; y = Math.min(...ys)-8;
+    w = Math.max(...xs)-Math.min(...xs)+16; h = Math.max(...ys)-Math.min(...ys)+16;
+  } else {
+    x = a.x-4; y = a.y-4; w = (a.w||20)+8; h = (a.h||20)+8;
+  }
+
+  ctx.save();
+  ctx.strokeStyle = 'var(--acc)'; 
+  ctx.lineWidth = 2*dpr;
+  ctx.setLineDash([6*dpr, 3*dpr]);
+  ctx.strokeRect(x, y, w, h);
+  // Corner handles
+  const hs = 6*dpr;
+  [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([hx,hy]) => {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(hx-hs/2, hy-hs/2, hs, hs);
+    ctx.strokeRect(hx-hs/2, hy-hs/2, hs, hs);
+  });
+  ctx.restore();
+}
+
+// Override startDraw for select tool to enable dragging
+const _origStartDraw = startDraw;
+function startDraw(e) {
+  if (S.tool !== 'select') { _origStartDraw(e); return; }
+  const av = document.getElementById('anno-canvas');
+  const dpr = window.devicePixelRatio;
+  const r = av.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * dpr;
+  const my = (e.clientY - r.top) * dpr;
+
+  const annos = getAnnos(S.activeIdx, S.page);
+  let found = -1;
+  for (let i = annos.length - 1; i >= 0; i--) {
+    if (hitTestAnno(annos[i], mx, my)) { found = i; break; }
+  }
+
+  if (found >= 0) {
+    _selAnnoIdx = found;
+    const a = annos[found];
+    _annoDrag = { idx: found, startMX: mx, startMY: my, origAnno: JSON.parse(JSON.stringify(a)) };
+    av.style.cursor = 'grabbing';
+    e.stopPropagation();
+  } else {
+    _selAnnoIdx = -1;
+    _annoDrag = null;
+  }
+  redrawAnnos();
+  if (_selAnnoIdx >= 0) drawSelectionHandles(annos[_selAnnoIdx]);
+}
+
+const _origMoveDraw = moveDraw;
+function moveDraw(e) {
+  if (S.tool !== 'select' || !_annoDrag) { 
+    if (S.tool !== 'select') _origMoveDraw(e); 
+    return; 
+  }
+  const av = document.getElementById('anno-canvas');
+  const dpr = window.devicePixelRatio;
+  const r = av.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * dpr;
+  const my = (e.clientY - r.top) * dpr;
+  const dx = mx - _annoDrag.startMX;
+  const dy = my - _annoDrag.startMY;
+
+  const annos = getAnnos(S.activeIdx, S.page);
+  const a = annos[_annoDrag.idx];
+  const orig = _annoDrag.origAnno;
+
+  // Move annotation
+  if ('x' in orig) { a.x = orig.x + dx; }
+  if ('y' in orig) { a.y = orig.y + dy; }
+  if ('x1' in orig) { a.x1 = orig.x1 + dx; a.x2 = orig.x2 + dx; }
+  if ('y1' in orig) { a.y1 = orig.y1 + dy; a.y2 = orig.y2 + dy; }
+  if (orig.points) { a.points = orig.points.map(p => ({x: p.x+dx, y: p.y+dy})); }
+
+  redrawAnnos();
+  drawSelectionHandles(a);
+}
+
+const _origEndDraw = endDraw;
+function endDraw(e) {
+  if (S.tool !== 'select') { _origEndDraw(e); return; }
+  if (_annoDrag) {
+    _annoDrag = null;
+    document.getElementById('anno-canvas').style.cursor = 'default';
+    renderAnnoList();
+    toast('Annotation flyttet ✓', 'ok');
+  }
+}
+
+// Delete selected annotation with Delete key
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && _selAnnoIdx >= 0 && S.tool === 'select') {
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+    e.preventDefault();
+    const annos = getAnnos(S.activeIdx, S.page);
+    annos.splice(_selAnnoIdx, 1);
+    _selAnnoIdx = -1;
+    redrawAnnos();
+    renderAnnoList();
+    toast('Slettet ✓');
+  }
+});
+
 // Wire up label file inputs
 ['file-input-topbar','file-input-empty'].forEach(function(id){
   var el=document.getElementById(id);
@@ -3925,7 +4109,9 @@ async function teLoadPage() {
 
   // If no text layer — use Tesseract OCR as fallback
   if (!items.length) {
-    document.getElementById('te-edit-info').textContent = '🔍 Ingen tekst-lag — kører OCR…';
+    const bar = document.getElementById('te-edit-bar');
+    bar.style.background = 'var(--sf3)';
+    document.getElementById('te-edit-info').innerHTML = '<span class="spin"></span> Kører OCR på siden — vent venligst…';
     try {
       const ocrCanvas = await renderPageForOCR(f.pdfJsDoc, S.page, 2.0, f);
       const result = await runTesseract(ocrCanvas);
@@ -3990,8 +4176,10 @@ async function teLoadPage() {
         TE.items.push(teItem);
       });
 
+      bar.style.background = '';
       document.getElementById('te-edit-info').textContent =
         TE.items.length + ' OCR-ord fundet — klik for at redigere';
+      toast(TE.items.length + ' tekstelementer klar ✓', 'ok');
       return; // Done via OCR path
     } catch(e) {
       document.getElementById('te-edit-info').textContent = '⚠ OCR fejl: ' + e.message;
