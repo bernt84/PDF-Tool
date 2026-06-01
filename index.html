@@ -3635,9 +3635,21 @@ const MuEditor = {
       this.pageBounds = pageBounds;
       this._renderBlocks();
 
+      if (blocks.length === 0) {
+        // Scannet PDF — fall back to Tesseract OCR
+        document.getElementById('te-edit-info').textContent = '🔍 Scannet PDF — kører OCR…';
+        this.active = false;
+        MuEditor.deactivate();
+        TE.active = true;
+        document.getElementById('te-edit-bar').classList.add('active');
+        await teLoadPage();
+        return;
+      }
+
       const count = blocks.length;
       document.getElementById('te-edit-info').textContent =
         count + ' tekstelementer — klik for at redigere';
+      toast(count + ' tekstelementer klar ✓', 'ok');
 
     } catch(e) {
       console.error('MuEditor.loadPage error:', e);
