@@ -2206,7 +2206,19 @@ function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;u
 function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();renderPage();}
 function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.totalPages===0;pi.max=S.totalPages;document.getElementById('tb-prev').disabled=S.page<=1;document.getElementById('tb-next').disabled=S.page>=S.totalPages;}
 function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
-function zoomFit(){if(S.activeIdx<0)return;S.files[S.activeIdx].pdfJsDoc.getPage(S.page).then(pg=>{const vp=pg.getViewport({scale:1});S.zoom=(document.getElementById('cv-container').clientWidth-28)/vp.width;renderPage();});}
+function zoomFit(){
+  if(S.activeIdx<0)return;
+  S.files[S.activeIdx].pdfJsDoc.getPage(S.page).then(pg=>{
+    const vp=pg.getViewport({scale:1});
+    const cont=document.getElementById('cv-container');
+    const availW=cont.clientWidth-28;
+    const availH=cont.clientHeight-28;
+    const zoomW=availW/vp.width;
+    const zoomH=availH/vp.height;
+    S.zoom=Math.min(zoomW,zoomH,2);
+    renderPage();
+  });
+}
 function rotateSingle(){S.rotation=(S.rotation+90)%360;if(S.activeIdx>=0){S.files[S.activeIdx]._viewRotation=S.rotation;S.files[S.activeIdx]._hasRotation=true;renderFileList();}renderPage();toast('Roteret til '+S.rotation+'°');}
 
 // ================================================================
@@ -3863,6 +3875,22 @@ async function downloadFilePDF(fileIdx) {
 }
 
 // MuPDF loads when user clicks "Rediger tekst" - no auto-init needed
+
+
+// Auto-advance page when scrolling in preview
+document.getElementById('cv-container').addEventListener('scroll', function() {
+  if(S.activeIdx<0||S.totalPages<=1)return;
+  const el=this;
+  const atBottom=el.scrollTop+el.clientHeight>=el.scrollHeight-10;
+  const atTop=el.scrollTop<=10;
+  if(atBottom&&S.page<S.totalPages){
+    S.page++;updateNavUI();renderPage();
+    el.scrollTop=0;
+  } else if(atTop&&S.page>1){
+    S.page--;updateNavUI();renderPage();
+    setTimeout(()=>el.scrollTop=el.scrollHeight,100);
+  }
+});
 
 // Wire up label file inputs
 ['file-input-topbar','file-input-empty'].forEach(function(id){
