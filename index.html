@@ -88,8 +88,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 /* ── PREVIEW ── */
 #preview-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-#cv-container{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:14px;background:#060809;position:relative;scrollbar-width:thin;scrollbar-color:var(--bd2) transparent}
-#cv-sizer{position:relative;display:none;cursor:default}
+#cv-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:14px;gap:12px;background:#060809;position:relative;scrollbar-width:thin;scrollbar-color:var(--bd2) transparent}
+#cv-sizer{position:relative;cursor:default}
 #pdf-canvas{display:block}
 #anno-canvas{position:absolute;top:0;left:0}
 #txt-overlay{position:absolute;top:0;left:0;pointer-events:none}
@@ -1421,7 +1421,7 @@ async function openFile(idx){
     if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
     if(!f.pdfLibDoc){prog(60);f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});}
     S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
-    await renderPage();await new Promise(r=>setTimeout(r,50));zoomFit();renderFileList();await loadBms(f);loadMeta(f);
+    await renderPage();renderFileList();await loadBms(f);loadMeta(f);
     if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
     ['tb-save','tb-sug','tb-textedit','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
       .forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=false;});
@@ -1434,32 +1434,126 @@ async function openFile(idx){
 // ================================================================
 // RENDER PAGE
 // ================================================================
+// Track per-page render tasks
+S._pageTasks = {};
+
 async function renderPage(){
-  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
-  if(S.renderTask){S.renderTask.cancel();S.renderTask=null;}
-  const page=await f.pdfJsDoc.getPage(S.page);
-  const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
-  const sc=S.zoom*window.devicePixelRatio;
-  const vp=page.getViewport({scale:sc,rotation:(S.rotation+pageRot)%360});
-  const cv=document.getElementById('pdf-canvas');const av=document.getElementById('anno-canvas');
-  const W=vp.width,H=vp.height;
-  [cv,av].forEach(c=>{c.width=W;c.height=H;c.style.width=(W/window.devicePixelRatio)+'px';c.style.height=(H/window.devicePixelRatio)+'px';});
-  const sizer=document.getElementById('cv-sizer');
-  sizer.style.width=(W/window.devicePixelRatio)+'px';sizer.style.height=(H/window.devicePixelRatio)+'px';
-  S.renderTask=page.render({canvasContext:cv.getContext('2d'),viewport:vp});
-  try{await S.renderTask.promise;}catch(e){}S.renderTask=null;
-  document.getElementById('pn-inp').value=S.page;
+  if(S.activeIdx<0)return;
+  await renderAllPages();
+  // Scroll to current page
+  setTimeout(()=>{
+    const el=document.getElementById('cv-page-'+S.page);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },100);
+}
+
+async function renderAllPages(){
+  if(S.activeIdx<0)return;
+  const f=S.files[S.activeIdx];
+  const cont=document.getElementById('cv-container');
+
+  // Cancel old tasks
+  Object.values(S._pageTasks||{}).forEach(t=>{try{t.cancel();}catch(e){}});
+  S._pageTasks={};
+
+  // Clear container except empty-st
+  const emptyEl=document.getElementById('empty-st');
+  cont.innerHTML='';
+  if(emptyEl)cont.appendChild(emptyEl);
+
   document.getElementById('pn-tot').textContent='/ '+S.totalPages;
   document.getElementById('zoom-lbl').textContent=Math.round(S.zoom*100)+'%';
   document.getElementById('te-pgnum').textContent=S.page;
-  document.getElementById('anno-pg-lbl').textContent='Side '+S.page;
-  redrawAnnos();setupAnnoEvents();
-  if(S._searchText)renderSearchHighlights();
-  if(S._inlineEditMode)refreshTextOverlay();
-  // Reload MuEditor overlay when page changes
-  if(typeof MuEditor !== 'undefined' && MuEditor.active) {
-    setTimeout(() => MuEditor.loadPage(), 300);
+
+  // Render each page
+  for(let pg=1;pg<=S.totalPages;pg++){
+    const wrapper=document.createElement('div');
+    wrapper.id='cv-page-'+pg;
+    wrapper.style.cssText='position:relative;flex-shrink:0;box-shadow:0 2px 12px rgba(0,0,0,.5);border-radius:3px;overflow:hidden';
+    if(pg===S.page)wrapper.style.outline='2px solid var(--acc)';
+
+    const cv=document.createElement('canvas');
+    const av=document.createElement('canvas');
+    av.style.cssText='position:absolute;top:0;left:0;cursor:crosshair';
+
+    // Page number label
+    const lbl=document.createElement('div');
+    lbl.style.cssText='position:absolute;bottom:4px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;border-radius:3px;padding:1px 5px;pointer-events:none;z-index:5';
+    lbl.textContent=pg+' / '+S.totalPages;
+
+    wrapper.appendChild(cv);
+    wrapper.appendChild(av);
+    wrapper.appendChild(lbl);
+
+    // Click to set active page
+    wrapper.addEventListener('click',()=>{
+      document.querySelectorAll('[id^="cv-page-"]').forEach(el=>el.style.outline='');
+      wrapper.style.outline='2px solid var(--acc)';
+      S.page=pg;
+      document.getElementById('pn-inp').value=pg;
+      document.getElementById('te-pgnum').textContent=pg;
+      document.getElementById('anno-pg-lbl').textContent='Side '+pg;
+      updateNavUI();
+      // Update anno canvas events for active page
+      setupAnnoEventsForCanvas(av,pg);
+      if(typeof MuEditor!=='undefined'&&MuEditor.active)setTimeout(()=>MuEditor.loadPage(),300);
+    });
+
+    cont.appendChild(wrapper);
+
+    // Render async
+    (async(pageNum,canvas,annoCanvas)=>{
+      try{
+        const page=await f.pdfJsDoc.getPage(pageNum);
+        const pageRot=(f.pageRotations&&f.pageRotations[pageNum])||0;
+        const dpr=window.devicePixelRatio;
+        const sc=S.zoom*dpr;
+        const vp=page.getViewport({scale:sc,rotation:(S.rotation+pageRot)%360});
+        const W=vp.width,H=vp.height;
+        canvas.width=W;canvas.height=H;
+        canvas.style.cssText=`display:block;width:${W/dpr}px;height:${H/dpr}px`;
+        annoCanvas.width=W;annoCanvas.height=H;
+        annoCanvas.style.cssText=`position:absolute;top:0;left:0;width:${W/dpr}px;height:${H/dpr}px;cursor:crosshair`;
+        wrapper.style.width=(W/dpr)+'px';
+
+        const task=page.render({canvasContext:canvas.getContext('2d'),viewport:vp});
+        S._pageTasks[pageNum]=task;
+        await task.promise;
+        delete S._pageTasks[pageNum];
+
+        // Draw annotations
+        const ctx=annoCanvas.getContext('2d');
+        ctx.clearRect(0,0,W,H);
+        getAnnos(S.activeIdx,pageNum).forEach(a=>drawAnno(ctx,a));
+
+        // Setup anno events for active page
+        if(pageNum===S.page){
+          setupAnnoEventsForCanvas(annoCanvas,pageNum);
+          if(S._searchText)renderSearchHighlightsOnCanvas(annoCanvas,pageNum);
+        }
+      }catch(e){}
+    })(pg,cv,av);
   }
+
+  document.getElementById('pn-inp').value=S.page;
+  updateNavUI();
+  if(S._inlineEditMode)refreshTextOverlay();
+  initPageScrollTracker();
+  if(typeof MuEditor!=='undefined'&&MuEditor.active)setTimeout(()=>MuEditor.loadPage(),300);
+}
+
+function setupAnnoEventsForCanvas(av,pageNum){
+  // Store active anno canvas
+  S._activeAnnoCanvas=av;
+  S._activeAnnoPage=pageNum;
+  av.onmousedown=startDraw;
+  av.onmousemove=moveDraw;
+  av.onmouseup=endDraw;
+  av.onmouseleave=endDraw;
+}
+
+function renderSearchHighlightsOnCanvas(av,pageNum){
+  // TODO: implement per-page search highlights
 }
 
 // ================================================================
@@ -1515,8 +1609,20 @@ function setColor(c,el){S.color=c;document.querySelectorAll('#menubar .color-pic
 function setRedactColor(c,el){S.redactColor=c;document.querySelectorAll('.redact-cp').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
 function setBulkRC(c,el){S.redactColor=c;document.querySelectorAll('.bulk-rcp').forEach(p=>p.style.border='2px solid transparent');el.style.border='2px solid #fff';}
 
-function setupAnnoEvents(){const av=document.getElementById('anno-canvas');av.onmousedown=startDraw;av.onmousemove=moveDraw;av.onmouseup=endDraw;av.onmouseleave=endDraw;}
-function canvasCoords(e){const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();const dpr=window.devicePixelRatio;return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr};}
+function setupAnnoEvents(){
+  // Setup on active page canvas
+  const wrapper=document.getElementById('cv-page-'+S.page);
+  if(!wrapper)return;
+  const av=wrapper.querySelectorAll('canvas')[1];
+  if(av)setupAnnoEventsForCanvas(av,S.page);
+}
+function canvasCoords(e){
+  const av=S._activeAnnoCanvas||document.querySelector('[id^="cv-page-"] canvas:last-of-type');
+  if(!av)return{x:0,y:0};
+  const r=av.getBoundingClientRect();
+  const dpr=window.devicePixelRatio;
+  return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr};
+}
 function startDraw(e){if(S.tool==='select')return;if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
 function moveDraw(e){
   if(!S._drawing)return;const{x,y}=canvasCoords(e);S._currentPoints.push({x,y});
@@ -1546,25 +1652,18 @@ async function resolveAnnoCoords(anno,fileIdx,pageNum){
   }catch{}
 }
 function redrawAnnos(){
-  const av=document.getElementById('anno-canvas');if(!av.width)return;
-  const ctx=av.getContext('2d');ctx.clearRect(0,0,av.width,av.height);
-  const annos=getAnnos(S.activeIdx,S.page);
-  // Resolve any pending coord conversions synchronously using cached viewport
-  const f=S.activeIdx>=0?S.files[S.activeIdx]:null;
-  annos.forEach(a=>{
-    if(a._needsCoordConvert&&f&&f.pdfJsDoc){
-      // Use sync estimation until async resolves
-      const dpr=window.devicePixelRatio;
-      const estScale=S.zoom*dpr;
-      a.x=a._pdfX*estScale*0.75;
-      a.y=(a._pdfY*estScale*0.75)-a._pdfH*estScale*0.75;
-      a.w=Math.max(a._pdfW*estScale*0.75,10);
-      a.h=Math.max(a._pdfH*estScale*1.2,10);
-      // Async resolve for next redraw
-      resolveAnnoCoords(a,S.activeIdx,S.page).then(()=>redrawAnnos());
-    }
-    drawAnno(ctx,a);
-  });
+  // Redraw annotations on all visible page canvases
+  for(let pg=1;pg<=S.totalPages;pg++){
+    const wrapper=document.getElementById('cv-page-'+pg);
+    if(!wrapper)continue;
+    const canvases=wrapper.querySelectorAll('canvas');
+    const av=canvases[1]; // anno canvas is second
+    if(!av||!av.width)continue;
+    const ctx=av.getContext('2d');
+    ctx.clearRect(0,0,av.width,av.height);
+    const annos=getAnnos(S.activeIdx,pg);
+    annos.forEach(a=>drawAnno(ctx,a));
+  }
 }
 function drawAnno(ctx,a){
   ctx.save();ctx.globalAlpha=a.opacity;const dpr=window.devicePixelRatio;
@@ -2202,24 +2301,37 @@ async function autoRotateAll(){
 // ================================================================
 // NAV + ZOOM + ROTATE
 // ================================================================
-function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();renderPage();if(S._pageMgrOpen)highlightThumb(n);if(TE.active)setTimeout(()=>teLoadPage(),300);}
-function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();renderPage();}
+function changePage(d){
+  const n=S.page+d;if(n<1||n>S.totalPages)return;
+  S.page=n;updateNavUI();
+  document.getElementById('pn-inp').value=n;
+  document.querySelectorAll('[id^="cv-page-"]').forEach(el=>el.style.outline='');
+  const el=document.getElementById('cv-page-'+n);
+  if(el){el.style.outline='2px solid var(--acc)';el.scrollIntoView({behavior:'smooth',block:'start'});}
+  if(S._pageMgrOpen)highlightThumb(n);
+  if(TE.active)setTimeout(()=>teLoadPage(),300);
+  if(typeof MuEditor!=='undefined'&&MuEditor.active)setTimeout(()=>MuEditor.loadPage(),300);
+}
+function gotoPageInput(v){
+  const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}
+  S.page=n;updateNavUI();
+  document.querySelectorAll('[id^="cv-page-"]').forEach(el=>el.style.outline='');
+  const el=document.getElementById('cv-page-'+n);
+  if(el){el.style.outline='2px solid var(--acc)';el.scrollIntoView({behavior:'smooth',block:'start'});}
+}
 function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.totalPages===0;pi.max=S.totalPages;document.getElementById('tb-prev').disabled=S.page<=1;document.getElementById('tb-next').disabled=S.page>=S.totalPages;}
-function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
+function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderAllPages();}
 function zoomFit(){
   if(S.activeIdx<0)return;
   S.files[S.activeIdx].pdfJsDoc.getPage(S.page).then(pg=>{
     const vp=pg.getViewport({scale:1});
     const cont=document.getElementById('cv-container');
     const availW=cont.clientWidth-28;
-    const availH=cont.clientHeight-28;
-    const zoomW=availW/vp.width;
-    const zoomH=availH/vp.height;
-    S.zoom=Math.min(zoomW,zoomH,2);
-    renderPage();
+    S.zoom=Math.min(availW/vp.width, 2);
+    renderAllPages();
   });
 }
-function rotateSingle(){S.rotation=(S.rotation+90)%360;if(S.activeIdx>=0){S.files[S.activeIdx]._viewRotation=S.rotation;S.files[S.activeIdx]._hasRotation=true;renderFileList();}renderPage();toast('Roteret til '+S.rotation+'°');}
+function rotateSingle(){S.rotation=(S.rotation+90)%360;if(S.activeIdx>=0){S.files[S.activeIdx]._viewRotation=S.rotation;S.files[S.activeIdx]._hasRotation=true;renderFileList();}renderAllPages();toast('Roteret til '+S.rotation+'°');}
 
 // ================================================================
 // PAGE MANAGER
@@ -2753,8 +2865,11 @@ function closeM(id){document.getElementById(id).classList.remove('open');}
 function clearAll(){
   if(S.activeIdx>=0&&S.activeIdx<S.files.length)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
   S.bms=[];S.page=1;S.totalPages=0;S._selPages.clear();
-  const cv=document.getElementById('pdf-canvas');cv.getContext('2d').clearRect(0,0,cv.width,cv.height);cv.width=0;cv.height=0;
-  const av=document.getElementById('anno-canvas');if(av.width){av.getContext('2d').clearRect(0,0,av.width,av.height);av.width=0;av.height=0;}
+  // Clear all page canvases
+  const cont=document.getElementById('cv-container');
+  const emptyEl=document.getElementById('empty-st');
+  if(cont){cont.innerHTML='';if(emptyEl)cont.appendChild(emptyEl);}
+  S._pageTasks={};S._activeAnnoCanvas=null;
   document.getElementById('bm-list').innerHTML='';document.getElementById('bm-count').textContent='—';
   document.getElementById('te-blocks').innerHTML='<div class="te-empty">Klik "Hent tekst" eller "Formular"</div>';
   document.getElementById('pn-tot').textContent='/ —';document.getElementById('pn-inp').value=1;
@@ -2765,7 +2880,7 @@ function clearAll(){
   document.getElementById('search-overlay').innerHTML='';
   S._inlineEditMode=false;S._selEl=null;
 }
-function showEmpty(show){document.getElementById('empty-st').style.display=show?'flex':'none';document.getElementById('cv-sizer').style.display=show?'none':'inline-block';}
+function showEmpty(show){const e=document.getElementById('empty-st');if(e)e.style.display=show?'flex':'none';}
 function prog(p){const bar=document.getElementById('prog');bar.style.width=p+'%';if(p>=100)setTimeout(()=>bar.style.width='0',700);}
 let _tt;
 function toast(msg,type=''){
@@ -3877,20 +3992,32 @@ async function downloadFilePDF(fileIdx) {
 // MuPDF loads when user clicks "Rediger tekst" - no auto-init needed
 
 
-// Auto-advance page when scrolling in preview
-document.getElementById('cv-container').addEventListener('scroll', function() {
-  if(S.activeIdx<0||S.totalPages<=1)return;
-  const el=this;
-  const atBottom=el.scrollTop+el.clientHeight>=el.scrollHeight-10;
-  const atTop=el.scrollTop<=10;
-  if(atBottom&&S.page<S.totalPages){
-    S.page++;updateNavUI();renderPage();
-    el.scrollTop=0;
-  } else if(atTop&&S.page>1){
-    S.page--;updateNavUI();renderPage();
-    setTimeout(()=>el.scrollTop=el.scrollHeight,100);
-  }
-});
+
+// Track which page is currently visible in preview
+function initPageScrollTracker(){
+  const cont = document.getElementById('cv-container');
+  if(!cont || cont._scrollTracked) return;
+  cont._scrollTracked = true;
+  cont.addEventListener('scroll', function(){
+    if(S.activeIdx < 0) return;
+    // Find which page is most visible
+    let best = S.page;
+    let bestVis = 0;
+    for(let pg=1; pg<=S.totalPages; pg++){
+      const el = document.getElementById('cv-page-'+pg);
+      if(!el) continue;
+      const rect = el.getBoundingClientRect();
+      const contRect = cont.getBoundingClientRect();
+      const vis = Math.min(rect.bottom, contRect.bottom) - Math.max(rect.top, contRect.top);
+      if(vis > bestVis){ bestVis=vis; best=pg; }
+    }
+    if(best !== S.page){
+      S.page = best;
+      document.getElementById('pn-inp').value = best;
+      updateNavUI();
+    }
+  }, {passive:true});
+}
 
 // Wire up label file inputs
 ['file-input-topbar','file-input-empty'].forEach(function(id){
