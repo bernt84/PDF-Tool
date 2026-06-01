@@ -662,6 +662,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   </div>
   <!-- Right: colors + sliders -->
   <div class="mb-right">
+    <button class="btn bIcon bSm" id="btn-tool-select" onclick="setTool('select')" title="Vælg/flyt annotation (V)">↖</button>
+    <div class="mb-vsep"></div>
     <span id="mb-tool-lbl">↖ Vælg</span>
     <div class="mb-vsep"></div>
     <div class="color-pick sel" style="background:#eab308" onclick="setColor('#eab308',this)"></div>
@@ -1244,6 +1246,7 @@ document.getElementById('fnt-sz').addEventListener('change',e=>S.fontSize=parseI
 document.getElementById('sig-w').addEventListener('input',e=>document.getElementById('sig-w-val').textContent=e.target.value+'px');
 document.addEventListener('click',e=>{if(!e.target.closest('.mb-group')&&!e.target.closest('.mb-menu'))closeMenus();});
 document.addEventListener('keydown',e=>{
+  if(e.key==='v'&&!e.ctrlKey&&!e.metaKey&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='TEXTAREA'&&!document.activeElement.isContentEditable){setTool('select');}
   if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();toggleSearch();}
   if(e.key==='Escape'){closeSearch();cancelBmEdit();}
   if((e.key==='Delete'||e.key==='Backspace')&&S._selEl&&document.activeElement!==S._selEl&&!document.activeElement.isContentEditable){
@@ -1518,6 +1521,9 @@ function sbNav(d){
 // ================================================================
 function setTool(t){
   S.tool=t;finishTextInput();
+  // Highlight select button
+  const selBtn=document.getElementById('btn-tool-select');
+  if(selBtn)selBtn.style.background=t==='select'?'rgba(59,130,246,.3)':'';
   const av=document.getElementById('anno-canvas');if(av)av.style.cursor=t==='select'?'default':t==='text'?'text':'crosshair';
   if(t==='redact'||t==='highlight')switchRT('anno');
   const names={select:'↖ Vælg',highlight:'▮ Fremhæv',redact:'█ Overstreg',pen:'✏ Pen',text:'T Tekst',rect:'□ Kasse',circle:'○ Cirkel',line:'╱ Linje',arrow:'→ Pil'};
