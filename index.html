@@ -1536,13 +1536,15 @@ function setupAnnoEvents(){
   av.onclick=selectAnno;
 }
 function canvasCoords(e){const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();const dpr=window.devicePixelRatio;return{x:(e.clientX-r.left)*dpr,y:(e.clientY-r.top)*dpr};}
-function startDraw(e){if(S.tool==='select')return;if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
+function startDraw(e){if(S.tool==='select'){startDrawSelect(e);return;}if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
 function moveDraw(e){
+  if(S.tool==='select'){moveDrawSelect(e);return;}
   if(!S._drawing)return;const{x,y}=canvasCoords(e);S._currentPoints.push({x,y});
   const av=document.getElementById('anno-canvas');if(!av)return;redrawAnnos();
   drawAnno(av.getContext('2d'),{type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity});
 }
 function endDraw(e){
+  if(S.tool==='select'){endDrawSelect(e);return;}
   if(!S._drawing)return;S._drawing=false;const{x,y}=canvasCoords(e);
   const dx=Math.abs(x-S._startX),dy=Math.abs(y-S._startY);if(dx<3&&dy<3&&S.tool!=='pen')return;
   const annos=getAnnos(S.activeIdx,S.page);
@@ -3976,10 +3978,8 @@ function drawSelectionHandles(a) {
   ctx.restore();
 }
 
-// Override startDraw for select tool to enable dragging
-const _origStartDraw = startDraw;
-function startDraw(e) {
-  if (S.tool !== 'select') { _origStartDraw(e); return; }
+// startDraw handles select tool inline (no override needed)
+function startDrawSelect(e) {
   const av = document.getElementById('anno-canvas');
   const dpr = window.devicePixelRatio;
   const r = av.getBoundingClientRect();
@@ -4006,12 +4006,8 @@ function startDraw(e) {
   if (_selAnnoIdx >= 0) drawSelectionHandles(annos[_selAnnoIdx]);
 }
 
-const _origMoveDraw = moveDraw;
-function moveDraw(e) {
-  if (S.tool !== 'select' || !_annoDrag) { 
-    if (S.tool !== 'select') _origMoveDraw(e); 
-    return; 
-  }
+function moveDrawSelect(e) {
+  if (!_annoDrag) return;
   const av = document.getElementById('anno-canvas');
   const dpr = window.devicePixelRatio;
   const r = av.getBoundingClientRect();
@@ -4035,9 +4031,7 @@ function moveDraw(e) {
   drawSelectionHandles(a);
 }
 
-const _origEndDraw = endDraw;
-function endDraw(e) {
-  if (S.tool !== 'select') { _origEndDraw(e); return; }
+function endDrawSelect(e) {
   if (_annoDrag) {
     _annoDrag = null;
     document.getElementById('anno-canvas').style.cursor = 'default';
