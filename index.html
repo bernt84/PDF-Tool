@@ -1322,17 +1322,16 @@ function togglePreview(){S._pvHidden=!S._pvHidden;document.getElementById('previ
 // ================================================================
 // triggerFile defined below with drag/drop
 document.getElementById('file-input').addEventListener('change',async e=>{
-  const files=Array.from(e.target.files);
-  console.log('file-input change fired, files:', files.length);
-  if(!files.length){toast('Ingen filer valgt',true);return;}
-  toast('Indlæser '+files.length+' fil(er)…');
+  const files=Array.from(e.target.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(!files.length)return;
   await handleFiles(files);
   e.target.value='';
 });
 document.addEventListener('dragover',e=>e.preventDefault());
 document.addEventListener('drop',async e=>{
   e.preventDefault();
-  await handleFiles(Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf')));
+  const pdfs=Array.from(e.dataTransfer.files).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(pdfs.length) await handleFiles(pdfs);
 });
 
 // Also fix file input — ensure it works cross-browser
@@ -4100,9 +4099,20 @@ async function teLoadPage() {
   const vp = page.getViewport({scale: S.zoom, rotation: totalRot});
   const content = await page.getTextContent({includeMarkedContent: false});
 
-  // Create overlay inside the active page wrapper
-  const wrapper = document.getElementById('cv-page-'+S.page);
-  if(!wrapper){ document.getElementById('te-edit-bar').classList.remove('active'); return; }
+  // Wait for cv-page wrapper to be rendered
+  let wrapper = document.getElementById('cv-page-'+S.page);
+  if(!wrapper){
+    // Pages might not be rendered yet - render them first
+    await renderAllPages();
+    await new Promise(r=>setTimeout(r,300));
+    wrapper = document.getElementById('cv-page-'+S.page);
+  }
+  if(!wrapper){
+    toast('Siden er ikke klar endnu — prøv igen', true);
+    document.getElementById('te-edit-bar').classList.remove('active');
+    TE.active = false;
+    return;
+  }
   let overlay = wrapper.querySelector('.txt-overlay-page');
   if(!overlay){ overlay=document.createElement('div'); overlay.className='txt-overlay-page'; overlay.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:40;width:100%;height:100%'; wrapper.appendChild(overlay); }
   overlay.innerHTML = '';
@@ -4165,12 +4175,10 @@ async function teLoadPage() {
 
     // Double-click to delete text element
     el.addEventListener('dblclick', e => {
-      if (confirm('Slet dette tekstelement fra PDF?')) {
         teItem.deleted = true;
         el.style.opacity = '0.2';
         el.style.textDecoration = 'line-through';
         el.disabled = true;
-      }
     });
 
     overlay.appendChild(el);
