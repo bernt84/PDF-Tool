@@ -330,9 +330,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   box-shadow:0 2px 12px rgba(59,130,246,.4);
 }
 .te-overlay-box.modified{
-  background:rgba(234,179,8,.15);
-  border:1px solid rgba(234,179,8,.5);
+  background:rgba(255,255,240,.95) !important;
+  border:1px solid rgba(34,197,94,.6) !important;
   border-radius:2px;
+  color:#111 !important;
 }
 #te-edit-bar{
   position:fixed;top:88px;left:50%;transform:translateX(-50%);
@@ -4298,9 +4299,6 @@ async function teLoadPage() {
 
         el.addEventListener('focus', () => {
           el.style.height = 'auto';
-          el.style.color = '#111';
-          el.style.background = 'rgba(255,255,255,0.97)';
-          el.style.border = '2px solid var(--acc)';
           el.value = teItem.newText; // prevent duplication
           document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
           // Temporarily remove preview for this item so canvas is clean
@@ -4311,16 +4309,6 @@ async function teLoadPage() {
           const changed = el.value !== teItem.origText;
           el.classList.toggle('modified', changed);
           el.style.height = teItem.vh + 'px';
-          // Keep text visible if modified
-          if (changed) {
-            el.style.color = '#111';
-            el.style.background = 'rgba(255,255,240,0.95)';
-            el.style.border = '1px solid rgba(34,197,94,.6)';
-          } else {
-            el.style.color = 'transparent';
-            el.style.background = '';
-            el.style.border = '';
-          }
           tePreviewChange(teItem);
           const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
           document.getElementById('te-edit-info').textContent =
@@ -4387,9 +4375,6 @@ async function teLoadPage() {
     el.addEventListener('focus', () => {
       el.style.height = 'auto';
       el.style.minHeight = vh + 'px';
-      el.style.color = '#111';
-      el.style.background = 'rgba(255,255,255,0.97)';
-      el.style.border = '2px solid var(--acc)';
       el.value = teItem.newText; // prevent duplication
       document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
     });
