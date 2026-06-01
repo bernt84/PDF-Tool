@@ -4179,49 +4179,50 @@ document.addEventListener('keydown', e => {
 });
 
 
-// Live preview — store as special annotations so redrawAnnos keeps them
+// Live preview — rebuild ALL preview annotations from scratch
 function tePreviewChange(teItem) {
   const annos = getAnnos(S.activeIdx, S.page);
   const dpr = window.devicePixelRatio;
 
-  // Remove old preview for this item
-  const filtered = annos.filter(a => !(a._tePreview && a._teIdx === teItem.idx));
+  // Remove ALL existing preview annotations
+  const nonPreview = annos.filter(a => !a._tePreview);
   annos.length = 0;
-  filtered.forEach(a => annos.push(a));
+  nonPreview.forEach(a => annos.push(a));
 
-  if (teItem.deleted || teItem.newText === teItem.origText) {
-    redrawAnnos();
-    return;
-  }
+  // Redraw all modified TE items
+  TE.items.forEach(item => {
+    if (item.newText === item.origText && !item.deleted) return;
 
-  // White-out annotation
-  annos.push({
-    type: 'redact',
-    x: teItem.vx * dpr - 2,
-    y: teItem.vy * dpr - 2,
-    w: (teItem.vw + 8) * dpr,
-    h: (teItem.vfs * 1.8) * dpr,
-    color: '#ffffff',
-    opacity: 1,
-    strokeSize: 0,
-    _tePreview: true,
-    _teIdx: teItem.idx,
-  });
+    // White-out
+    annos.push({
+      type: 'redact',
+      x: item.vx * dpr - 1,
+      y: item.vy * dpr - 1,
+      w: (item.vw + 6) * dpr,
+      h: (item.vfs * 1.7) * dpr,
+      color: '#ffffff',
+      opacity: 1,
+      strokeSize: 0,
+      _tePreview: true,
+      _teIdx: item.idx,
+    });
 
-  // New text annotation
-  annos.push({
-    type: 'text',
-    x: teItem.vx * dpr,
-    y: teItem.vy * dpr + teItem.vfs * dpr * 0.1,
-    w: (teItem.vw + 8) * dpr,
-    h: (teItem.vfs * 1.8) * dpr,
-    text: teItem.newText,
-    color: '#111111',
-    fontSize: teItem.vfs,
-    opacity: 1,
-    strokeSize: 0,
-    _tePreview: true,
-    _teIdx: teItem.idx,
+    if (!item.deleted && item.newText) {
+      annos.push({
+        type: 'text',
+        x: item.vx * dpr,
+        y: item.vy * dpr,
+        w: (item.vw + 6) * dpr,
+        h: (item.vfs * 1.7) * dpr,
+        text: item.newText,
+        color: '#111111',
+        fontSize: item.vfs,
+        opacity: 1,
+        strokeSize: 0,
+        _tePreview: true,
+        _teIdx: item.idx,
+      });
+    }
   });
 
   redrawAnnos();
@@ -4326,6 +4327,12 @@ async function teLoadPage() {
         el.addEventListener('focus', () => {
           el.style.height = 'auto';
           document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
+          // Temporarily remove preview for this item so canvas is clean
+          const annos = getAnnos(S.activeIdx, S.page);
+          const filtered = annos.filter(a => !(a._tePreview && a._teIdx === teItem.idx));
+          annos.length = 0;
+          filtered.forEach(a => annos.push(a));
+          redrawAnnos();
         });
         el.addEventListener('blur', () => {
           teItem.newText = el.value;
