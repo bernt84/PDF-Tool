@@ -4179,51 +4179,25 @@ document.addEventListener('keydown', e => {
 });
 
 
-// Live preview — rebuild ALL preview annotations from scratch
+// Live preview — just update the textarea CSS to show modified state
 function tePreviewChange(teItem) {
-  const annos = getAnnos(S.activeIdx, S.page);
-  const dpr = window.devicePixelRatio;
+  if (!teItem.el) return;
+  const changed = teItem.newText !== teItem.origText;
+  const deleted = teItem.deleted;
 
-  // Remove ALL existing preview annotations
-  const nonPreview = annos.filter(a => !a._tePreview);
-  annos.length = 0;
-  nonPreview.forEach(a => annos.push(a));
-
-  // Redraw all modified TE items
-  TE.items.forEach(item => {
-    if (item.newText === item.origText && !item.deleted) return;
-
-    // White-out — cover original text completely
-    // vy is bottom of text in css pixels, go up by vfs to cover full height
-    const wx = item.vx * dpr - 2;
-    const wy = (item.vy - item.vfs * 1.1) * dpr;
-    const ww = (item.vw + 8) * dpr;
-    const wh = (item.vfs * 1.4) * dpr;
-
-    annos.push({
-      type: 'redact',
-      x: wx, y: wy, w: ww, h: wh,
-      color: '#ffffff',
-      opacity: 1, strokeSize: 0,
-      _tePreview: true, _teIdx: item.idx,
-    });
-
-    if (!item.deleted && item.newText) {
-      annos.push({
-        type: 'text',
-        x: wx + 1,
-        y: wy + 1,
-        w: ww, h: wh,
-        text: item.newText,
-        color: '#111111',
-        fontSize: item.vfs * 0.88,
-        opacity: 1, strokeSize: 0,
-        _tePreview: true, _teIdx: item.idx,
-      });
-    }
-  });
-
-  redrawAnnos();
+  if (deleted) {
+    teItem.el.style.background = 'rgba(239,68,68,.15)';
+    teItem.el.style.textDecoration = 'line-through';
+    teItem.el.style.color = 'rgba(239,68,68,.5)';
+  } else if (changed) {
+    teItem.el.style.background = 'rgba(34,197,94,.15)';
+    teItem.el.style.border = '1px solid rgba(34,197,94,.5)';
+    teItem.el.classList.add('modified');
+  } else {
+    teItem.el.style.background = '';
+    teItem.el.style.border = '';
+    teItem.el.classList.remove('modified');
+  }
 }
 
 
@@ -4326,22 +4300,7 @@ async function teLoadPage() {
           el.style.height = 'auto';
           document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
           // Temporarily remove preview for this item so canvas is clean
-          // Clear ALL preview annos on focus so canvas is clean
-          const annos = getAnnos(S.activeIdx, S.page);
-          const filtered = annos.filter(a => !a._tePreview);
-          annos.length = 0;
-          filtered.forEach(a => annos.push(a));
-          // Redraw other items' previews but not this one
-          TE.items.forEach(other => {
-            if (other.idx === teItem.idx) return;
-            if (other.newText === other.origText && !other.deleted) return;
-            const d = window.devicePixelRatio;
-            const ox = other.vx*d-2, oy=(other.vy-other.vfs*1.1)*d;
-            const ow=(other.vw+8)*d, oh=(other.vfs*1.4)*d;
-            annos.push({type:'redact',x:ox,y:oy,w:ow,h:oh,color:'#ffffff',opacity:1,strokeSize:0,_tePreview:true,_teIdx:other.idx});
-            if (!other.deleted && other.newText) annos.push({type:'text',x:ox+1,y:oy+1,w:ow,h:oh,text:other.newText,color:'#111111',fontSize:other.vfs*0.88,opacity:1,strokeSize:0,_tePreview:true,_teIdx:other.idx});
-          });
-          redrawAnnos();
+          // Nothing to clear - preview is shown via textarea styling
         });
         el.addEventListener('blur', () => {
           teItem.newText = el.value;
