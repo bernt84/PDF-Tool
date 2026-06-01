@@ -547,7 +547,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <!-- TOPBAR -->
 <div id="topbar">
   <div class="logo">⬛ PDF Tool Pro<sub>v2.1</sub></div>
-  <div id="mupdf-badge">◎ MuPDF</div>
+  <div id="mupdf-badge" onclick="checkMuPDFStatus()" title="Klik for status">◎ MuPDF</div>
   <div class="vsep"></div>
   <label class="btn bPri bSm" style="cursor:pointer"><input type="file" id="file-input-topbar" accept=".pdf" multiple style="display:none"/>+ PDF</label>
   <div class="vsep"></div>
@@ -4184,6 +4184,14 @@ function tePreviewChange(teItem) {
   });
 
   redrawAnnos();
+}
+
+
+function checkMuPDFStatus() {
+  const sab = typeof SharedArrayBuffer !== 'undefined';
+  const cross = self.crossOriginIsolated;
+  toast('SharedArrayBuffer: ' + (sab?'✓':'✗') + ' | crossOriginIsolated: ' + (cross?'✓':'✗') + ' | MuPDF: ' + (MuPDF.ready?'klar':MuPDF.loading?'loader':'ikke startet'));
+  console.log('SAB:', sab, 'COI:', cross, 'MuPDF ready:', MuPDF.ready);
 }
 
 // Wire up label file inputs
