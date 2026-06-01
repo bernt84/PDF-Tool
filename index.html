@@ -3907,7 +3907,12 @@ async function teLoadPage() {
   const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
   const totalRot = (S.rotation + pageRot) % 360;
   const vp = page.getViewport({scale: S.zoom, rotation: totalRot});
-  const content = await page.getTextContent({includeMarkedContent: false});
+  // Try multiple getTextContent options
+  let content = await page.getTextContent({includeMarkedContent: true, disableCombineTextItems: false});
+  if(!content.items.length) {
+    content = await page.getTextContent({includeMarkedContent: false});
+  }
+  console.log('getTextContent result:', content.items.length, 'items, first:', content.items[0]?.str?.substring(0,30));
 
   // Use original txt-overlay
   const overlay = document.getElementById('txt-overlay');
