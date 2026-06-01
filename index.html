@@ -2,6 +2,16 @@
 <html lang="da">
 <head>
 <meta charset="UTF-8"/>
+<script>
+// coi-serviceworker — enables SharedArrayBuffer needed for MuPDF WASM on GitHub Pages
+if (typeof SharedArrayBuffer === 'undefined') {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/PDF-Tool/coi-serviceworker.js').then(reg => {
+      if (!navigator.serviceWorker.controller) window.location.reload();
+    });
+  }
+}
+</script>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>PDF Tool Pro v2.1</title>
 <meta name="version" content="2.1"/>
