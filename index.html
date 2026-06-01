@@ -4000,6 +4000,7 @@ function startDrawSelect(e) {
   // Check if clicking a resize handle on selected annotation
   if (_selAnnoIdx >= 0) {
     const handle = getResizeHandle(annos[_selAnnoIdx], mx, my);
+    console.log('resize check: selIdx=', _selAnnoIdx, 'handle=', handle, 'mx=', Math.round(mx), 'my=', Math.round(my), 'anno=', annos[_selAnnoIdx]?.x, annos[_selAnnoIdx]?.y, annos[_selAnnoIdx]?.w, annos[_selAnnoIdx]?.h);
     if (handle) {
       _annoDrag = {
         idx: _selAnnoIdx, startMX: mx, startMY: my,
