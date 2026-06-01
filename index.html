@@ -3954,6 +3954,8 @@ function hitTestAnno(a, mx, my) {
   }
 }
 
+let _selAnnoBounds = null; // stores {x,y,w,h} in canvas coords
+
 function drawSelectionHandles(a) {
   const av = document.getElementById('anno-canvas');
   const ctx = av.getContext('2d');
@@ -3961,15 +3963,18 @@ function drawSelectionHandles(a) {
   let x, y, w, h;
 
   if (a.type === 'line' || a.type === 'arrow') {
-    x = Math.min(a.x1,a.x2)-8; y = Math.min(a.y1,a.y2)-8;
-    w = Math.abs(a.x2-a.x1)+16; h = Math.abs(a.y2-a.y1)+16;
+    x = Math.min(a.x1,a.x2)-8*dpr; y = Math.min(a.y1,a.y2)-8*dpr;
+    w = Math.abs(a.x2-a.x1)+16*dpr; h = Math.abs(a.y2-a.y1)+16*dpr;
   } else if (a.type === 'pen') {
     const xs = a.points.map(p=>p.x), ys = a.points.map(p=>p.y);
-    x = Math.min(...xs)-8; y = Math.min(...ys)-8;
-    w = Math.max(...xs)-Math.min(...xs)+16; h = Math.max(...ys)-Math.min(...ys)+16;
+    x = Math.min(...xs)-8*dpr; y = Math.min(...ys)-8*dpr;
+    w = Math.max(...xs)-Math.min(...xs)+16*dpr; h = Math.max(...ys)-Math.min(...ys)+16*dpr;
   } else {
-    x = a.x-4; y = a.y-4; w = (a.w||20)+8; h = (a.h||20)+8;
+    x = a.x-4*dpr; y = a.y-4*dpr; w = (a.w||20)+8*dpr; h = (a.h||20)+8*dpr;
   }
+
+  // Store bounds for hit testing
+  _selAnnoBounds = {x, y, w, h};
 
   ctx.save();
   ctx.strokeStyle = '#3b82f6';
@@ -3977,7 +3982,6 @@ function drawSelectionHandles(a) {
   ctx.setLineDash([6*dpr, 3*dpr]);
   ctx.strokeRect(x, y, w, h);
   ctx.setLineDash([]);
-  // Corner handles - bigger and more visible
   const hs = 10*dpr;
   [[x,y,'nw'],[x+w,y,'ne'],[x,y+h,'sw'],[x+w,y+h,'se']].forEach(([hx,hy,pos]) => {
     ctx.fillStyle = '#3b82f6';
@@ -4002,13 +4006,7 @@ function startDrawSelect(e) {
   // Check if clicking a resize handle on selected annotation
   if (_selAnnoIdx >= 0) {
     const handle = getResizeHandle(annos[_selAnnoIdx], mx, my);
-    const _a = annos[_selAnnoIdx];
-    const _dpr = window.devicePixelRatio;
-    const _cv2 = document.getElementById('pdf-canvas');
-    console.log('DPR:', _dpr, 'canvas:', _cv2?.width, 'x', _cv2?.height, 'style:', _cv2?.style.width, 'x', _cv2?.style.height);
-    console.log('resize check: selIdx=', _selAnnoIdx, 'handle=', handle, 'mx=', Math.round(mx), 'my=', Math.round(my));
-    console.log('anno x,y,w,h:', Math.round(_a?.x), Math.round(_a?.y), Math.round(_a?.w), Math.round(_a?.h));
-    console.log('expected corners SE:', Math.round((_a?.x||0)+(_a?.w||0)), Math.round((_a?.y||0)+(_a?.h||0)));
+
     if (handle) {
       _annoDrag = {
         idx: _selAnnoIdx, startMX: mx, startMY: my,
@@ -4043,19 +4041,16 @@ function startDrawSelect(e) {
 
 // Returns which resize handle is being clicked: 'nw','ne','sw','se' or null
 function getResizeHandle(a, mx, my) {
-  if (a.type === 'pen' || a.type === 'line' || a.type === 'arrow') return null;
+  if (!_selAnnoBounds) return null;
   const dpr = window.devicePixelRatio;
-  const hs = 14 * dpr; // bigger hit area
-  const x = a.x||0, y = a.y||0;
-  const w = a.w||20, h = a.h||20;
+  const hs = 16 * dpr;
+  const {x, y, w, h} = _selAnnoBounds;
   const corners = {
     nw: [x, y], ne: [x+w, y],
     sw: [x, y+h], se: [x+w, y+h]
   };
   for (const [handle, [hx, hy]] of Object.entries(corners)) {
-    if (Math.abs(mx-hx) < hs && Math.abs(my-hy) < hs) {
-      return handle;
-    }
+    if (Math.abs(mx-hx) < hs && Math.abs(my-hy) < hs) return handle;
   }
   return null;
 }
@@ -4088,21 +4083,20 @@ function moveDrawSelect(e) {
   const orig = _annoDrag.origAnno;
 
   if (_annoDrag.resizeHandle) {
-    // Resize annotation
-    const h = _annoDrag.resizeHandle;
+    const rh = _annoDrag.resizeHandle;
     const minSize = 10 * dpr;
-    if (h === 'se') {
+    if (rh === 'se') {
       a.w = Math.max(minSize, orig.w + dx);
       a.h = Math.max(minSize, orig.h + dy);
-    } else if (h === 'sw') {
+    } else if (rh === 'sw') {
       a.x = orig.x + dx;
       a.w = Math.max(minSize, orig.w - dx);
       a.h = Math.max(minSize, orig.h + dy);
-    } else if (h === 'ne') {
+    } else if (rh === 'ne') {
       a.w = Math.max(minSize, orig.w + dx);
       a.y = orig.y + dy;
       a.h = Math.max(minSize, orig.h - dy);
-    } else if (h === 'nw') {
+    } else if (rh === 'nw') {
       a.x = orig.x + dx; a.y = orig.y + dy;
       a.w = Math.max(minSize, orig.w - dx);
       a.h = Math.max(minSize, orig.h - dy);
@@ -4150,29 +4144,24 @@ function tePreviewChange(teItem) {
   if (!av || !av.width) return;
   const ctx = av.getContext('2d');
   const dpr = window.devicePixelRatio;
+  // vx/vy are CSS pixels, canvas is DPR scaled
+  const x = teItem.vx * dpr;
+  const y = teItem.vy * dpr;
+  const w = (teItem.vw + 8) * dpr;
+  const h = (teItem.vfs * 1.8) * dpr;
+  const fs = teItem.vfs * dpr;
 
-  if (teItem.deleted) {
-    // White out
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(teItem.vx * dpr, (teItem.vy) * dpr, (teItem.vw + 4) * dpr, (teItem.vfs * 1.4) * dpr);
-    return;
-  }
-
-  if (teItem.newText === teItem.origText) {
-    // Undo - redraw annos to clear preview
-    redrawAnnos();
-    return;
-  }
-
-  // White out original area
+  // White out original
   ctx.fillStyle = '#fff';
-  ctx.fillRect(teItem.vx * dpr - 2, teItem.vy * dpr - 2, (teItem.vw + 8) * dpr, (teItem.vfs * 1.6) * dpr);
+  ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
 
-  // Draw new text
-  ctx.fillStyle = '#000';
-  ctx.font = `${teItem.vfs * dpr}px ${teItem.fontName || 'sans-serif'}`;
-  ctx.textBaseline = 'top';
-  ctx.fillText(teItem.newText, teItem.vx * dpr, teItem.vy * dpr);
+  if (!teItem.deleted && teItem.newText) {
+    // Draw new text in black
+    ctx.fillStyle = '#111';
+    ctx.font = `${fs}px ${teItem.fontName || 'Arial,sans-serif'}`;
+    ctx.textBaseline = 'top';
+    ctx.fillText(teItem.newText, x, y + 1);
+  }
 }
 
 // Wire up label file inputs
