@@ -3358,47 +3358,46 @@ self.onmessage = async function(e) {
           json = {blocks:[]};
         }
 
-        // json.blocks -> array of blocks with lines
+        // json.blocks -> bbox is {x,y,w,h} format
         (json.blocks || []).forEach((block, bi) => {
           if (block.type !== 'text') return;
           (block.lines || []).forEach((line, li) => {
             const spans = line.spans || [];
             if (!spans.length) return;
 
-            // Combine all spans in a line into one editable block
             const text = spans.map(s => s.text || '').join('');
             if (!text.trim()) return;
 
-            // Get bounding box from first and last span
             const firstSpan = spans[0];
-            const lastSpan = spans[spans.length - 1];
 
-            // bbox is [x0,y0,x1,y1]
-            const bbox = [
-              Math.min(...spans.map(s => s.bbox ? s.bbox[0] : 0)),
-              Math.min(...spans.map(s => s.bbox ? s.bbox[1] : 0)),
-              Math.max(...spans.map(s => s.bbox ? s.bbox[2] : 0)),
-              Math.max(...spans.map(s => s.bbox ? s.bbox[3] : 0)),
-            ];
+            // bbox is {x, y, w, h} in PDF points
+            const bb = line.bbox || block.bbox || {x:0,y:0,w:100,h:12};
+            const x0 = bb.x, y0 = bb.y;
+            const x1 = bb.x + bb.w, y1 = bb.y + bb.h;
 
             const fontSize = firstSpan.size || 12;
             const fontName = (firstSpan.font && firstSpan.font.name) || 'Helvetica';
-            const color = firstSpan.color || 0; // RGB as integer
+            const color = firstSpan.color || 0;
 
             blocks.push({
               id: bi + '_' + li,
               text,
               origText: text,
-              bbox,   // PDF coordinates
+              bbox: [x0, y0, x1, y1],
               fontSize,
               fontName,
               color,
-              lineDir: line.dir || [1, 0],
             });
           });
         });
 
-        const pageBounds = page.getBounds();
+        // getBounds returns Rect - normalize to [x0,y0,x1,y1]
+        const rawBounds = page.getBounds();
+        const pageBounds = Array.isArray(rawBounds)
+          ? rawBounds
+          : [rawBounds.x||0, rawBounds.y||0,
+             (rawBounds.x||0)+(rawBounds.w||595),
+             (rawBounds.y||0)+(rawBounds.h||842)];
         self.postMessage({id, type:'result', result: {blocks, pageBounds}});
         break;
       }
