@@ -3789,6 +3789,7 @@ const MuEditor = {
 
 // toggleTextEdit — tries MuPDF first, falls back to simple TE
 async function toggleTextEdit() {
+  console.log('toggleTextEdit called, TE.active=', TE.active, 'S.activeIdx=', S.activeIdx);
   if (TE.active) {
     TE.active = false;
     teClearOverlay();
@@ -3798,7 +3799,9 @@ async function toggleTextEdit() {
   if (S.activeIdx < 0) { toast('Åbn en PDF først', true); return; }
   TE.active = true;
   document.getElementById('te-edit-bar').classList.add('active');
+  console.log('calling teLoadPage...');
   await teLoadPage();
+  console.log('teLoadPage done, TE.items=', TE.items.length);
 }
 
 // extractText override removed
@@ -3892,6 +3895,7 @@ const TE = {
 
 
 async function teLoadPage() {
+  console.log('teLoadPage called, S.activeIdx=', S.activeIdx, 'S.page=', S.page);
   if (S.activeIdx < 0) return;
   const f = S.files[S.activeIdx];
   teClearOverlay();
@@ -3910,6 +3914,7 @@ async function teLoadPage() {
   if(!overlay){ toast('Fejl: overlay ikke fundet', true); return; }
   overlay.innerHTML = '';
   overlay.style.pointerEvents = 'all';
+  console.log('overlay ready:', overlay, 'content items:', content.items.length);
 
   const items = content.items.filter(i => i.str && i.str.trim().length > 0);
   let modCount = 0;
