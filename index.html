@@ -1865,34 +1865,7 @@ function toggleInlineEdit(){
   refreshTextOverlay();toast(S._inlineEditMode?'Klik på tekst i PDF for at redigere':'Inline redigering slukket');
 }
 
-async function extractText(){
-  if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
-  const wrap=document.getElementById('te-blocks');wrap.innerHTML='';
-  try{
-    const page=await f.pdfJsDoc.getPage(S.page);
-    const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
-    const totalRot=(S.rotation+pageRot)%360;
-    const vp=page.getViewport({scale:S.zoom,rotation:totalRot});
-    const content=await page.getTextContent({includeMarkedContent:false});
-    const items=content.items.filter(i=>i.str&&i.str.trim().length>0);
-    if(!items.length){wrap.innerHTML='<div class="te-empty">Ingen tekst — prøv OCR</div>';return;}
-    const edits=getTextEdits(S.activeIdx,S.page);edits.length=0;
-    items.forEach((item,i)=>{
-      const tx=item.transform;const fontSize=Math.max(6,Math.sqrt(tx[0]*tx[0]+tx[1]*tx[1]));
-      const vPt=vp.convertToViewportPoint(tx[4],tx[5]);const vfs=fontSize*S.zoom;const vw=Math.max((item.width||0)*S.zoom,8);
-      edits.push({origText:item.str,newText:item.str,pdfX:tx[4],pdfY:tx[5],fontSize,fontFamily:item.fontName||'sans-serif',vx:vPt[0],vy:vPt[1],vh:vfs*1.2,vw,vfs:Math.max(vfs,6),deleted:false,newPdfX:null,newPdfY:null});
-      const el=document.createElement('div');el.className='te-b';
-      el.innerHTML=`<div class="te-bh"><span>${Math.round(vfs)}pt</span>
-        <button class="btn bXs bGh" onclick="getTextEdits(${S.activeIdx},${S.page})[${i}].newText=getTextEdits(${S.activeIdx},${S.page})[${i}].origText;this.closest('.te-b').querySelector('textarea').value=getTextEdits(${S.activeIdx},${S.page})[${i}].origText;refreshTextOverlay()" title="Nulstil">↺</button>
-        <button class="btn bXs bDng" onclick="getTextEdits(${S.activeIdx},${S.page})[${i}].deleted=true;this.closest('.te-b').style.opacity='.3';refreshTextOverlay()" title="Slet">✕</button>
-      </div>
-      <textarea class="te-ta" rows="1" oninput="updateTextEdit(${S.activeIdx},${S.page},${i},this.value)">${escH(item.str)}</textarea>`;
-      wrap.appendChild(el);
-    });
-    S._inlineEditMode=true;refreshTextOverlay();
-    toast(edits.length+' tekstfelter indlæst — klik i PDF for at redigere','ok');switchRT('te');
-  }catch(err){toast('Fejl: '+err.message,true);}
-}
+// extractText — defined below
 
 async function loadFormFields(){
   if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
@@ -3977,13 +3950,7 @@ async function toggleTextEdit() {
   await teLoadPage();
 }
 
-// Override extractText to use MuEditor
-async function extractText() {
-  await MuEditor.activate();
-  switchRT('te');
-  const wrap = document.getElementById('te-blocks');
-  wrap.innerHTML = '<div style="padding:8px;font-size:11px;color:var(--acc)">✓ MuPDF tekst-redigering aktiv — klik direkte i dokumentet</div>';
-}
+// extractText override removed
 
 // Override teUndoAll
 function teUndoAll() { MuEditor.undoAll(); }
