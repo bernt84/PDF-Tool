@@ -1561,11 +1561,11 @@ function renderSearchHighlightsOnCanvas(av,pageNum){
 // TEXT SEARCH
 // ================================================================
 function toggleSearch(){document.getElementById('search-bar').classList.toggle('show');if(document.getElementById('search-bar').classList.contains('show'))document.getElementById('sb-inp').focus();}
-function closeSearch(){document.getElementById('search-bar').classList.remove('show');S._searchMatches=[];S._searchText='';document.getElementById('search-overlay').innerHTML='';document.getElementById('sb-info').textContent='0 / 0';}
+function closeSearch(){document.getElementById('search-bar').classList.remove('show');S._searchMatches=[];S._searchText='';document.querySelectorAll('.search-overlay-page').forEach(o=>o.innerHTML='');document.getElementById('sb-info').textContent='0 / 0';}
 function sbKey(e){if(e.key==='Enter')sbNav(1);if(e.key==='Escape')closeSearch();}
 async function searchText(term){
   S._searchText=term;S._searchMatches=[];S._searchIdx=0;
-  document.getElementById('search-overlay').innerHTML='';
+  document.querySelectorAll('.search-overlay-page').forEach(o=>o.innerHTML='');
   if(!term||term.length<2||S.activeIdx<0){document.getElementById('sb-info').textContent='0 / 0';return;}
   const f=S.files[S.activeIdx];const page=await f.pdfJsDoc.getPage(S.page);
   const content=await page.getTextContent();const vp=page.getViewport({scale:S.zoom});
@@ -1580,7 +1580,10 @@ async function searchText(term){
   renderSearchHighlights();
 }
 function renderSearchHighlights(){
-  const overlay=document.getElementById('search-overlay');overlay.innerHTML='';
+  const wrapper=document.getElementById('cv-page-'+S.page);if(!wrapper)return;
+  let overlay=wrapper.querySelector('.search-overlay-page');
+  if(!overlay){overlay=document.createElement('div');overlay.className='search-overlay-page';overlay.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:35';wrapper.appendChild(overlay);}
+  overlay.innerHTML='';
   S._searchMatches.forEach((m,i)=>{
     const div=document.createElement('div');div.className='search-hl'+(i===S._searchIdx?' current':'');
     div.style.cssText=`left:${m.x}px;top:${m.y}px;width:${Math.max(m.w,20)}px;height:${Math.max(m.h,14)}px`;
@@ -1689,7 +1692,12 @@ function drawArrow(ctx,x1,y1,x2,y2,color,sw){
 }
 function placeTextInput(e){
   finishTextInput();const av=S._activeAnnoCanvas;if(!av)return;const r=av.getBoundingClientRect();
-  const overlay=document.getElementById('txt-overlay');overlay.style.pointerEvents='all';
+  // Find or create txt-overlay inside active page wrapper
+  const wrapper=document.getElementById('cv-page-'+S.page);
+  if(!wrapper)return;
+  let overlay=wrapper.querySelector('.txt-overlay-page');
+  if(!overlay){overlay=document.createElement('div');overlay.className='txt-overlay-page';overlay.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:40';wrapper.appendChild(overlay);}
+  overlay.style.pointerEvents='all';
   const inp=document.createElement('textarea');inp.className='ov-el';
   inp.style.cssText=`left:${e.clientX-r.left}px;top:${e.clientY-r.top}px;font-size:${S.fontSize}px;color:${S.color};background:transparent;border:1.5px dashed var(--acc);outline:none;resize:both;overflow:hidden;min-width:80px;min-height:24px;padding:3px 5px;position:absolute`;
   overlay.appendChild(inp);inp.focus();S._activeTextInput={el:inp,cx:e.clientX-r.left,cy:e.clientY-r.top};
@@ -1702,7 +1710,7 @@ function finishTextInput(cancel=false){
     annos.push({type:'text',x:cx*dpr,y:cy*dpr,w:200*dpr,h:50*dpr,text:el.value,color:S.color,strokeSize:1,opacity:1,fontSize:S.fontSize});
     redrawAnnos();renderAnnoList();
   }
-  el.remove();S._activeTextInput=null;document.getElementById('txt-overlay').style.pointerEvents='none';
+  el.remove();S._activeTextInput=null;if(el.closest('.txt-overlay-page'))el.closest('.txt-overlay-page').style.pointerEvents='none';
 }
 function undoAnno(){const a=getAnnos(S.activeIdx,S.page);if(a.length>0){a.pop();redrawAnnos();renderAnnoList();}}
 function clearPageAnnos(){getAnnos(S.activeIdx,S.page).splice(0);redrawAnnos();renderAnnoList();}
@@ -1770,9 +1778,8 @@ function fmtBytes(b){if(b<1024)return b+'B';if(b<1048576)return Math.round(b/102
 // INLINE TEXT EDITOR
 // ================================================================
 function refreshTextOverlay(){
-  const overlay=document.getElementById('txt-overlay');overlay.innerHTML='';
-  if(!S._inlineEditMode||S.activeIdx<0){overlay.style.pointerEvents='none';return;}
-  overlay.style.pointerEvents='all';
+  // refreshTextOverlay - use per-page overlays now
+  if(!S._inlineEditMode||S.activeIdx<0)return;
   const edits=getTextEdits(S.activeIdx,S.page);
   edits.forEach((ed,i)=>{
     if(ed.deleted)return;
@@ -2877,8 +2884,8 @@ function clearAll(){
   document.getElementById('pt-list').innerHTML='';document.getElementById('cv-sizer').style.display='none';
   ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=true;});
   showEmpty(true);closeFnBox();cancelBmEdit();
-  document.getElementById('txt-overlay').innerHTML='';document.getElementById('txt-overlay').style.pointerEvents='none';
-  document.getElementById('search-overlay').innerHTML='';
+  document.querySelectorAll('.txt-overlay-page').forEach(o=>{o.innerHTML='';o.style.pointerEvents='none';});
+  document.querySelectorAll('.search-overlay-page').forEach(o=>o.innerHTML='');
   S._inlineEditMode=false;S._selEl=null;
 }
 function showEmpty(show){const e=document.getElementById('empty-st');if(e)e.style.display=show?'flex':'none';}
@@ -4084,7 +4091,12 @@ async function teLoadPage() {
   const vp = page.getViewport({scale: S.zoom, rotation: totalRot});
   const content = await page.getTextContent({includeMarkedContent: false});
 
-  const overlay = document.getElementById('txt-overlay');
+  // Create overlay inside the active page wrapper
+  const wrapper = document.getElementById('cv-page-'+S.page);
+  if(!wrapper){ document.getElementById('te-edit-bar').classList.remove('active'); return; }
+  let overlay = wrapper.querySelector('.txt-overlay-page');
+  if(!overlay){ overlay=document.createElement('div'); overlay.className='txt-overlay-page'; overlay.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:40;width:100%;height:100%'; wrapper.appendChild(overlay); }
+  overlay.innerHTML = '';
   overlay.style.pointerEvents = 'all';
 
   const items = content.items.filter(i => i.str && i.str.trim().length > 0);
@@ -4162,9 +4174,7 @@ async function teLoadPage() {
 }
 
 function teClearOverlay() {
-  const overlay = document.getElementById('txt-overlay');
-  overlay.innerHTML = '';
-  overlay.style.pointerEvents = 'none';
+  document.querySelectorAll('.txt-overlay-page').forEach(o=>{o.innerHTML='';o.style.pointerEvents='none';});
 }
 
 function teUndoAll() {
