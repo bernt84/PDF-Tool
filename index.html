@@ -587,7 +587,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="setTool('arrow');closeMenus()"><span>→</span> Pil</div>
         <div class="mb-sep"></div>
         <div class="mb-sep"></div>
-        <div class="mb-item" onclick="toggleTextEdit();closeMenus()"><span>✎</span> Rediger tekst (MuPDF)</div>
+        <div class="mb-item" onclick="toggleTextEdit();closeMenus()"><span>✎</span> Rediger tekst</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="undoAnno();closeMenus()">↩ Fortryd</div>
         <div class="mb-item" onclick="clearPageAnnos();closeMenus()">🗑 Ryd side</div>
@@ -1403,7 +1403,6 @@ function updateBulkSum(){
 }
 function deleteSelected(){
   const c=S.files.filter(f=>f.bulkSel).length;if(!c){toast('Ingen markeret',true);return;}
-  if(!confirm(`Slet ${c} fil(er)?`))return;
   for(let i=S.files.length-1;i>=0;i--){if(S.files[i].bulkSel){S.files.splice(i,1);if(S.activeIdx===i){S.activeIdx=-1;clearAll();}else if(S.activeIdx>i)S.activeIdx--;}}
   renderFileList();updateBulkSum();if(S._mode==='list')renderListMode();
 }
@@ -1628,7 +1627,7 @@ function canvasCoords(e){
 function startDraw(e){if(S.tool==='select')return;if(S.tool==='text'){placeTextInput(e);return;}S._drawing=true;const{x,y}=canvasCoords(e);S._startX=x;S._startY=y;S._currentPoints=[{x,y}];}
 function moveDraw(e){
   if(!S._drawing)return;const{x,y}=canvasCoords(e);S._currentPoints.push({x,y});
-  const av=document.getElementById('anno-canvas');redrawAnnos();
+  const av=S._activeAnnoCanvas;if(!av)return;redrawAnnos();
   drawAnno(av.getContext('2d'),{type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity});
 }
 function endDraw(e){
@@ -1689,7 +1688,7 @@ function drawArrow(ctx,x1,y1,x2,y2,color,sw){
   ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(angle-Math.PI/6),y2-hs*Math.sin(angle-Math.PI/6));ctx.lineTo(x2-hs*Math.cos(angle+Math.PI/6),y2-hs*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill();
 }
 function placeTextInput(e){
-  finishTextInput();const av=document.getElementById('anno-canvas');const r=av.getBoundingClientRect();
+  finishTextInput();const av=S._activeAnnoCanvas;if(!av)return;const r=av.getBoundingClientRect();
   const overlay=document.getElementById('txt-overlay');overlay.style.pointerEvents='all';
   const inp=document.createElement('textarea');inp.className='ov-el';
   inp.style.cssText=`left:${e.clientX-r.left}px;top:${e.clientY-r.top}px;font-size:${S.fontSize}px;color:${S.color};background:transparent;border:1.5px dashed var(--acc);outline:none;resize:both;overflow:hidden;min-width:80px;min-height:24px;padding:3px 5px;position:absolute`;
@@ -1706,7 +1705,7 @@ function finishTextInput(cancel=false){
   el.remove();S._activeTextInput=null;document.getElementById('txt-overlay').style.pointerEvents='none';
 }
 function undoAnno(){const a=getAnnos(S.activeIdx,S.page);if(a.length>0){a.pop();redrawAnnos();renderAnnoList();}}
-function clearPageAnnos(){if(!confirm('Ryd side '+S.page+'?'))return;getAnnos(S.activeIdx,S.page).splice(0);redrawAnnos();renderAnnoList();}
+function clearPageAnnos(){getAnnos(S.activeIdx,S.page).splice(0);redrawAnnos();renderAnnoList();}
 function renderAnnoList(){
   const list=document.getElementById('anno-list');const annos=getAnnos(S.activeIdx,S.page);
   if(!annos.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px">Ingen annotationer</div>';return;}
@@ -2356,7 +2355,7 @@ async function renderPageThumbs(){
   window._pgSort=Sortable.create(list,{animation:120,onEnd:()=>toast('Rækkefølge ændret — gemmes ved download')});
 }
 function highlightThumb(pg){document.querySelectorAll('.pt').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.pg)===pg));}
-function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}if(!confirm('Slet?'))return;S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
+function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
 function rotSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}const f=S.files[S.activeIdx];S._selPages.forEach(p=>{if(!f.pageRotations)f.pageRotations={};f.pageRotations[p]=(f.pageRotations[p]||0+90)%360;});f._hasRotation=true;renderFileList();renderPage();}
 function extractSelPages(){if(!S._selPages.size){toast('Vælg sider i sidepanelet',true);return;}const pages=[...S._selPages].sort((a,b)=>a-b).join(', ');document.getElementById('extract-pages').value=pages;document.getElementById('extract-name').value=S.files[S.activeIdx].name.replace('.pdf','_udtræk.pdf');openM('m-extract');}
 
@@ -2445,7 +2444,7 @@ function commitBmEdit(){
 }
 function cancelBmEdit(){document.getElementById('bm-edit-form').style.display='none';}
 function toggleBm(){if(S.selBm<0)return;S.bms[S.selBm].disabled=!S.bms[S.selBm].disabled;if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];renderBmList();}
-function deleteBm(){if(S.selBm<0)return;if(!confirm('Slet?'))return;S.bms.splice(S.selBm,1);S.selBm=-1;disableBmBtns();if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}
+function deleteBm(){if(S.selBm<0)return;S.bms.splice(S.selBm,1);S.selBm=-1;disableBmBtns();if(S.activeIdx>=0)S.files[S.activeIdx]._existingBms=[...S.bms];renderBmList();document.getElementById('bm-count').textContent=S.bms.length+' bogmærker';}
 
 // ================================================================
 // FILENAME SUGGEST
@@ -3924,12 +3923,22 @@ const MuEditor = {
   },
 };
 
-// Override toggleTextEdit to use MuEditor
+// toggleTextEdit — tries MuPDF first, falls back to simple TE
 async function toggleTextEdit() {
   if (MuEditor.active) {
     MuEditor.deactivate();
-  } else {
+    return;
+  }
+  if (S.activeIdx < 0) { toast('Åbn en PDF først', true); return; }
+  // Try MuPDF
+  if (MuPDF.ready) {
     await MuEditor.activate();
+  } else {
+    // Fall back to simple overlay text editor
+    TE.active = true;
+    document.getElementById('te-edit-bar').classList.add('active');
+    await teLoadPage();
+    toast('MuPDF ikke klar — bruger simpel tekst-editor');
   }
 }
 
