@@ -3620,6 +3620,8 @@ const MuEditor = {
 
       // Get text blocks for this page
       const {blocks, pageBounds} = await MuPDF.getPageBlocks(S.page, S.zoom);
+      console.log('getPageBlocks:', blocks?.length, 'blocks, pageBounds:', pageBounds);
+      if (blocks?.length) console.log('first block:', JSON.stringify(blocks[0]));
       this.blocks = blocks;
       this.pageBounds = pageBounds;
       this._renderBlocks();
