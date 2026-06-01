@@ -3020,6 +3020,12 @@ function saveLfBmPage(fi, bi, val) {
 window.addEventListener('load',()=>{
   initSigCanvas();
   initAISystem();
+  // Start MuPDF in background now that SharedArrayBuffer works
+  setTimeout(() => {
+    if (typeof SharedArrayBuffer !== 'undefined' && self.crossOriginIsolated) {
+      MuPDF.init();
+    }
+  }, 2000);
 });
 
 // ================================================================
@@ -3806,19 +3812,27 @@ const MuEditor = {
 
 // toggleTextEdit — tries MuPDF first, falls back to simple TE
 async function toggleTextEdit() {
-  console.log('toggleTextEdit called, TE.active=', TE.active, 'S.activeIdx=', S.activeIdx);
-  if (TE.active) {
+  // Close if already active
+  if (TE.active || MuEditor.active) {
     TE.active = false;
+    MuEditor.deactivate();
     teClearOverlay();
     document.getElementById('te-edit-bar').classList.remove('active');
     return;
   }
   if (S.activeIdx < 0) { toast('Åbn en PDF først', true); return; }
-  TE.active = true;
-  document.getElementById('te-edit-bar').classList.add('active');
-  console.log('calling teLoadPage...');
-  await teLoadPage();
-  console.log('teLoadPage done, TE.items=', TE.items.length);
+
+  // Use MuPDF if ready (best quality), otherwise TE fallback
+  if (MuPDF.ready) {
+    await MuEditor.activate();
+  } else if (MuPDF.loading) {
+    toast('MuPDF loader — prøv igen om et øjeblik…');
+  } else {
+    // TE fallback (MuPDF not available)
+    TE.active = true;
+    document.getElementById('te-edit-bar').classList.add('active');
+    await teLoadPage();
+  }
 }
 
 // extractText override removed
