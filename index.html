@@ -3889,17 +3889,7 @@ const TE = {
   page: -1,
 };
 
-async function toggleTextEdit() {
-  TE.active = !TE.active;
-  const bar = document.getElementById('te-edit-bar');
-  bar.classList.toggle('active', TE.active);
-  if (TE.active) {
-    await teLoadPage();
-    document.getElementById('te-edit-info').textContent = 'Klik på tekst for at redigere — ændringer bages ind ved download';
-  } else {
-    teClearOverlay();
-  }
-}
+
 
 async function teLoadPage() {
   if (S.activeIdx < 0) return;
