@@ -4138,30 +4138,52 @@ document.addEventListener('keydown', e => {
 });
 
 
-// Live preview of text edit on anno canvas
+// Live preview — store as special annotations so redrawAnnos keeps them
 function tePreviewChange(teItem) {
-  const av = document.getElementById('anno-canvas');
-  if (!av || !av.width) return;
-  const ctx = av.getContext('2d');
+  const annos = getAnnos(S.activeIdx, S.page);
   const dpr = window.devicePixelRatio;
-  // vx/vy are CSS pixels, canvas is DPR scaled
-  const x = teItem.vx * dpr;
-  const y = teItem.vy * dpr;
-  const w = (teItem.vw + 8) * dpr;
-  const h = (teItem.vfs * 1.8) * dpr;
-  const fs = teItem.vfs * dpr;
 
-  // White out original
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  // Remove old preview for this item
+  const filtered = annos.filter(a => !(a._tePreview && a._teIdx === teItem.idx));
+  annos.length = 0;
+  filtered.forEach(a => annos.push(a));
 
-  if (!teItem.deleted && teItem.newText) {
-    // Draw new text in black
-    ctx.fillStyle = '#111';
-    ctx.font = `${fs}px ${teItem.fontName || 'Arial,sans-serif'}`;
-    ctx.textBaseline = 'top';
-    ctx.fillText(teItem.newText, x, y + 1);
+  if (teItem.deleted || teItem.newText === teItem.origText) {
+    redrawAnnos();
+    return;
   }
+
+  // White-out annotation
+  annos.push({
+    type: 'redact',
+    x: teItem.vx * dpr - 2,
+    y: teItem.vy * dpr - 2,
+    w: (teItem.vw + 8) * dpr,
+    h: (teItem.vfs * 1.8) * dpr,
+    color: '#ffffff',
+    opacity: 1,
+    strokeSize: 0,
+    _tePreview: true,
+    _teIdx: teItem.idx,
+  });
+
+  // New text annotation
+  annos.push({
+    type: 'text',
+    x: teItem.vx * dpr,
+    y: teItem.vy * dpr + teItem.vfs * dpr * 0.1,
+    w: (teItem.vw + 8) * dpr,
+    h: (teItem.vfs * 1.8) * dpr,
+    text: teItem.newText,
+    color: '#111111',
+    fontSize: teItem.vfs,
+    opacity: 1,
+    strokeSize: 0,
+    _tePreview: true,
+    _teIdx: teItem.idx,
+  });
+
+  redrawAnnos();
 }
 
 // Wire up label file inputs
