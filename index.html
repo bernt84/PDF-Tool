@@ -586,6 +586,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <div class="mb-group">
       <button class="mb-btn" onclick="toggleMenu('m-anno')">✏ Annotér ▾</button>
       <div class="mb-menu" id="m-anno">
+        <div class="mb-item" onclick="setTool('select');closeMenus()"><span>↖</span> Vælg / Flyt / Størrelse</div>
+        <div class="mb-sep"></div>
         <div class="mb-section">Tegneværktøjer</div>
         <div class="mb-item" onclick="setTool('highlight');closeMenus()"><span>▮</span> Fremhævning</div>
         <div class="mb-item" onclick="setTool('redact');closeMenus()"><span>█</span> Overstrekning</div>
@@ -662,8 +664,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   </div>
   <!-- Right: colors + sliders -->
   <div class="mb-right">
-    <button class="btn bIcon bSm" id="btn-tool-select" onclick="setTool('select')" title="Vælg/flyt annotation (V)">↖</button>
-    <div class="mb-vsep"></div>
     <span id="mb-tool-lbl">↖ Vælg</span>
     <div class="mb-vsep"></div>
     <div class="color-pick sel" style="background:#eab308" onclick="setColor('#eab308',this)"></div>
@@ -3993,6 +3993,23 @@ function startDrawSelect(e) {
   const my = (e.clientY - r.top) * dpr;
 
   const annos = getAnnos(S.activeIdx, S.page);
+
+  // Check if clicking a resize handle on selected annotation
+  if (_selAnnoIdx >= 0) {
+    const handle = getResizeHandle(annos[_selAnnoIdx], mx, my);
+    if (handle) {
+      _annoDrag = {
+        idx: _selAnnoIdx, startMX: mx, startMY: my,
+        origAnno: JSON.parse(JSON.stringify(annos[_selAnnoIdx])),
+        resizeHandle: handle
+      };
+      av.style.cursor = 'nwse-resize';
+      e.stopPropagation();
+      return;
+    }
+  }
+
+  // Check if clicking an annotation to move
   let found = -1;
   for (let i = annos.length - 1; i >= 0; i--) {
     if (hitTestAnno(annos[i], mx, my)) { found = i; break; }
@@ -4001,7 +4018,7 @@ function startDrawSelect(e) {
   if (found >= 0) {
     _selAnnoIdx = found;
     const a = annos[found];
-    _annoDrag = { idx: found, startMX: mx, startMY: my, origAnno: JSON.parse(JSON.stringify(a)) };
+    _annoDrag = { idx: found, startMX: mx, startMY: my, origAnno: JSON.parse(JSON.stringify(a)), resizeHandle: null };
     av.style.cursor = 'grabbing';
     e.stopPropagation();
   } else {
@@ -4012,8 +4029,36 @@ function startDrawSelect(e) {
   if (_selAnnoIdx >= 0) drawSelectionHandles(annos[_selAnnoIdx]);
 }
 
+// Returns which resize handle is being clicked: 'nw','ne','sw','se' or null
+function getResizeHandle(a, mx, my) {
+  if (a.type === 'pen' || a.type === 'line' || a.type === 'arrow') return null;
+  const hs = 10 * window.devicePixelRatio;
+  const x = a.x, y = a.y, w = a.w||20, h = a.h||20;
+  const corners = {
+    nw: [x, y], ne: [x+w, y],
+    sw: [x, y+h], se: [x+w, y+h]
+  };
+  for (const [handle, [hx, hy]] of Object.entries(corners)) {
+    if (Math.abs(mx-hx) < hs && Math.abs(my-hy) < hs) return handle;
+  }
+  return null;
+}
+
 function moveDrawSelect(e) {
-  if (!_annoDrag) return;
+  if (!_annoDrag) {
+    // Update cursor based on hover
+    const av = document.getElementById('anno-canvas');
+    const dpr = window.devicePixelRatio;
+    const r = av.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * dpr;
+    const my = (e.clientY - r.top) * dpr;
+    const annos = getAnnos(S.activeIdx, S.page);
+    if (_selAnnoIdx >= 0) {
+      const handle = getResizeHandle(annos[_selAnnoIdx], mx, my);
+      av.style.cursor = handle ? 'nwse-resize' : hitTestAnno(annos[_selAnnoIdx], mx, my) ? 'grab' : 'default';
+    }
+    return;
+  }
   const av = document.getElementById('anno-canvas');
   const dpr = window.devicePixelRatio;
   const r = av.getBoundingClientRect();
@@ -4026,12 +4071,34 @@ function moveDrawSelect(e) {
   const a = annos[_annoDrag.idx];
   const orig = _annoDrag.origAnno;
 
-  // Move annotation
-  if ('x' in orig) { a.x = orig.x + dx; }
-  if ('y' in orig) { a.y = orig.y + dy; }
-  if ('x1' in orig) { a.x1 = orig.x1 + dx; a.x2 = orig.x2 + dx; }
-  if ('y1' in orig) { a.y1 = orig.y1 + dy; a.y2 = orig.y2 + dy; }
-  if (orig.points) { a.points = orig.points.map(p => ({x: p.x+dx, y: p.y+dy})); }
+  if (_annoDrag.resizeHandle) {
+    // Resize annotation
+    const h = _annoDrag.resizeHandle;
+    const minSize = 10 * dpr;
+    if (h === 'se') {
+      a.w = Math.max(minSize, orig.w + dx);
+      a.h = Math.max(minSize, orig.h + dy);
+    } else if (h === 'sw') {
+      a.x = orig.x + dx;
+      a.w = Math.max(minSize, orig.w - dx);
+      a.h = Math.max(minSize, orig.h + dy);
+    } else if (h === 'ne') {
+      a.w = Math.max(minSize, orig.w + dx);
+      a.y = orig.y + dy;
+      a.h = Math.max(minSize, orig.h - dy);
+    } else if (h === 'nw') {
+      a.x = orig.x + dx; a.y = orig.y + dy;
+      a.w = Math.max(minSize, orig.w - dx);
+      a.h = Math.max(minSize, orig.h - dy);
+    }
+  } else {
+    // Move annotation
+    if ('x' in orig) { a.x = orig.x + dx; }
+    if ('y' in orig) { a.y = orig.y + dy; }
+    if ('x1' in orig) { a.x1 = orig.x1 + dx; a.x2 = orig.x2 + dx; }
+    if ('y1' in orig) { a.y1 = orig.y1 + dy; a.y2 = orig.y2 + dy; }
+    if (orig.points) { a.points = orig.points.map(p => ({x: p.x+dx, y: p.y+dy})); }
+  }
 
   redrawAnnos();
   drawSelectionHandles(a);
