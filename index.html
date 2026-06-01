@@ -3610,10 +3610,13 @@ const MuEditor = {
     this._clearOverlay();
 
     document.getElementById('te-edit-info').textContent = 'MuPDF analyserer side…';
+    console.log('MuEditor.loadPage: loading doc, buf size:', f.buf?.byteLength);
 
     try {
       // Load doc into MuPDF worker if not already
-      const result = await MuPDF.loadDoc(f.buf);
+      const copy = f.buf.slice(0); // always use fresh copy
+      const result = await MuPDF.loadDoc(copy);
+      console.log('MuPDF.loadDoc result:', result);
 
       // Get text blocks for this page
       const {blocks, pageBounds} = await MuPDF.getPageBlocks(S.page, S.zoom);
@@ -3626,6 +3629,7 @@ const MuEditor = {
         count + ' tekstelementer — klik for at redigere';
 
     } catch(e) {
+      console.error('MuEditor.loadPage error:', e);
       document.getElementById('te-edit-info').textContent = '⚠ ' + e.message;
       toast('MuPDF fejl: ' + e.message, true);
     }
