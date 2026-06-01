@@ -4298,14 +4298,29 @@ async function teLoadPage() {
 
         el.addEventListener('focus', () => {
           el.style.height = 'auto';
+          el.style.color = '#111';
+          el.style.background = 'rgba(255,255,255,0.97)';
+          el.style.border = '2px solid var(--acc)';
+          el.value = teItem.newText; // prevent duplication
           document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
           // Temporarily remove preview for this item so canvas is clean
           // Nothing to clear - preview is shown via textarea styling
         });
         el.addEventListener('blur', () => {
           teItem.newText = el.value;
-          el.classList.toggle('modified', el.value !== teItem.origText);
+          const changed = el.value !== teItem.origText;
+          el.classList.toggle('modified', changed);
           el.style.height = teItem.vh + 'px';
+          // Keep text visible if modified
+          if (changed) {
+            el.style.color = '#111';
+            el.style.background = 'rgba(255,255,240,0.95)';
+            el.style.border = '1px solid rgba(34,197,94,.6)';
+          } else {
+            el.style.color = 'transparent';
+            el.style.background = '';
+            el.style.border = '';
+          }
           tePreviewChange(teItem);
           const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
           document.getElementById('te-edit-info').textContent =
@@ -4372,6 +4387,10 @@ async function teLoadPage() {
     el.addEventListener('focus', () => {
       el.style.height = 'auto';
       el.style.minHeight = vh + 'px';
+      el.style.color = '#111';
+      el.style.background = 'rgba(255,255,255,0.97)';
+      el.style.border = '2px solid var(--acc)';
+      el.value = teItem.newText; // prevent duplication
       document.getElementById('te-edit-info').textContent = `Redigerer: "${teItem.origText.substring(0,30)}"`;
     });
 
