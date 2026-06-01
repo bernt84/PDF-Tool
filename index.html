@@ -2355,7 +2355,7 @@ async function renderPageThumbs(){
   window._pgSort=Sortable.create(list,{animation:120,onEnd:()=>toast('Rækkefølge ændret — gemmes ved download')});
 }
 function highlightThumb(pg){document.querySelectorAll('.pt').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.pg)===pg));}
-function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
+function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
 function rotSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}const f=S.files[S.activeIdx];S._selPages.forEach(p=>{if(!f.pageRotations)f.pageRotations={};f.pageRotations[p]=(f.pageRotations[p]||0+90)%360;});f._hasRotation=true;renderFileList();renderPage();}
 function extractSelPages(){if(!S._selPages.size){toast('Vælg sider i sidepanelet',true);return;}const pages=[...S._selPages].sort((a,b)=>a-b).join(', ');document.getElementById('extract-pages').value=pages;document.getElementById('extract-name').value=S.files[S.activeIdx].name.replace('.pdf','_udtræk.pdf');openM('m-extract');}
 
