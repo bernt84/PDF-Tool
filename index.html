@@ -3358,35 +3358,35 @@ self.onmessage = async function(e) {
           json = {blocks:[]};
         }
 
-        // json.blocks -> bbox is {x,y,w,h} format
+        // Parse each span individually for maximum granularity
+        let spanIdx = 0;
         (json.blocks || []).forEach((block, bi) => {
           if (block.type !== 'text') return;
           (block.lines || []).forEach((line, li) => {
-            const spans = line.spans || [];
-            if (!spans.length) return;
+            (line.spans || []).forEach((span, si) => {
+              const text = span.text || '';
+              if (!text.trim()) return;
 
-            const text = spans.map(s => s.text || '').join('');
-            if (!text.trim()) return;
+              // bbox is {x, y, w, h} in PDF points
+              const bb = span.bbox || line.bbox || block.bbox || {x:0,y:0,w:50,h:12};
+              const x0 = bb.x, y0 = bb.y;
+              const x1 = bb.x + (bb.w || 50);
+              const y1 = bb.y + (bb.h || 12);
 
-            const firstSpan = spans[0];
+              const fontSize = span.size || 12;
+              const fontName = (span.font && span.font.name) || 'Helvetica';
+              const color = span.color || 0;
 
-            // bbox is {x, y, w, h} in PDF points
-            const bb = line.bbox || block.bbox || {x:0,y:0,w:100,h:12};
-            const x0 = bb.x, y0 = bb.y;
-            const x1 = bb.x + bb.w, y1 = bb.y + bb.h;
-
-            const fontSize = firstSpan.size || 12;
-            const fontName = (firstSpan.font && firstSpan.font.name) || 'Helvetica';
-            const color = firstSpan.color || 0;
-
-            blocks.push({
-              id: bi + '_' + li,
-              text,
-              origText: text,
-              bbox: [x0, y0, x1, y1],
-              fontSize,
-              fontName,
-              color,
+              blocks.push({
+                id: bi + '_' + li + '_' + si,
+                text,
+                origText: text,
+                bbox: [x0, y0, x1, y1],
+                fontSize,
+                fontName,
+                color,
+              });
+              spanIdx++;
             });
           });
         });
