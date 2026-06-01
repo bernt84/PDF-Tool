@@ -3970,15 +3970,18 @@ function drawSelectionHandles(a) {
   }
 
   ctx.save();
-  ctx.strokeStyle = 'var(--acc)'; 
+  ctx.strokeStyle = '#3b82f6';
   ctx.lineWidth = 2*dpr;
   ctx.setLineDash([6*dpr, 3*dpr]);
   ctx.strokeRect(x, y, w, h);
-  // Corner handles
-  const hs = 6*dpr;
-  [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([hx,hy]) => {
-    ctx.fillStyle = '#fff';
+  ctx.setLineDash([]);
+  // Corner handles - bigger and more visible
+  const hs = 10*dpr;
+  [[x,y,'nw'],[x+w,y,'ne'],[x,y+h,'sw'],[x+w,y+h,'se']].forEach(([hx,hy,pos]) => {
+    ctx.fillStyle = '#3b82f6';
     ctx.fillRect(hx-hs/2, hy-hs/2, hs, hs);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5*dpr;
     ctx.strokeRect(hx-hs/2, hy-hs/2, hs, hs);
   });
   ctx.restore();
@@ -4032,14 +4035,18 @@ function startDrawSelect(e) {
 // Returns which resize handle is being clicked: 'nw','ne','sw','se' or null
 function getResizeHandle(a, mx, my) {
   if (a.type === 'pen' || a.type === 'line' || a.type === 'arrow') return null;
-  const hs = 10 * window.devicePixelRatio;
-  const x = a.x, y = a.y, w = a.w||20, h = a.h||20;
+  const dpr = window.devicePixelRatio;
+  const hs = 14 * dpr; // bigger hit area
+  const x = a.x||0, y = a.y||0;
+  const w = a.w||20, h = a.h||20;
   const corners = {
     nw: [x, y], ne: [x+w, y],
     sw: [x, y+h], se: [x+w, y+h]
   };
   for (const [handle, [hx, hy]] of Object.entries(corners)) {
-    if (Math.abs(mx-hx) < hs && Math.abs(my-hy) < hs) return handle;
+    if (Math.abs(mx-hx) < hs && Math.abs(my-hy) < hs) {
+      return handle;
+    }
   }
   return null;
 }
