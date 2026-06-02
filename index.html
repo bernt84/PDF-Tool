@@ -1531,7 +1531,7 @@ function setTool(t){
   const av=document.getElementById('anno-canvas');if(av){
     if(t==='select') av.style.cursor='default';
     else if(t==='text') av.style.cursor='text';
-    else if(t==='highlight') av.style.cursor='url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><rect x='2' y='14' width='20' height='8' rx='2' fill='%23FFD700' opacity='.8'/><rect x='10' y='2' width='4' height='14' rx='1' fill='%23888'/></svg>") 12 22, crosshair';
+    else if(t==='highlight') av.style.cursor='crosshair';
     else av.style.cursor='crosshair';
   }
   if(t==='redact'||t==='highlight')switchRT('anno');
