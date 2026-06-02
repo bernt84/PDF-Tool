@@ -1528,7 +1528,12 @@ function setTool(t){
   // Highlight select button
   const selBtn=document.getElementById('btn-tool-select');
   if(selBtn)selBtn.style.background=t==='select'?'rgba(59,130,246,.3)':'';
-  const av=document.getElementById('anno-canvas');if(av)av.style.cursor=t==='select'?'default':t==='text'?'text':'crosshair';
+  const av=document.getElementById('anno-canvas');if(av){
+    if(t==='select') av.style.cursor='default';
+    else if(t==='text') av.style.cursor='text';
+    else if(t==='highlight') av.style.cursor='url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><rect x='2' y='14' width='20' height='8' rx='2' fill='%23FFD700' opacity='.8'/><rect x='10' y='2' width='4' height='14' rx='1' fill='%23888'/></svg>") 12 22, crosshair';
+    else av.style.cursor='crosshair';
+  }
   if(t==='redact'||t==='highlight')switchRT('anno');
   const names={select:'↖ Vælg',highlight:'▮ Fremhæv',redact:'█ Overstreg',pen:'✏ Pen',text:'T Tekst',rect:'□ Kasse',circle:'○ Cirkel',line:'╱ Linje',arrow:'→ Pil'};
   const ind=document.getElementById('mb-tool-lbl');if(ind)ind.textContent=names[t]||t;
@@ -1558,7 +1563,7 @@ function endDraw(e){
   if(!S._drawing)return;S._drawing=false;const{x,y}=canvasCoords(e);
   const dx=Math.abs(x-S._startX),dy=Math.abs(y-S._startY);if(dx<3&&dy<3&&S.tool!=='pen')return;
   const annos=getAnnos(S.activeIdx,S.page);
-  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize});
+  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
 }
 async function resolveAnnoCoords(anno,fileIdx,pageNum){
@@ -2605,10 +2610,14 @@ async function bakeAnnotations(doc,fileIdx){
     const pageNum=parseInt(pageNumStr);const annos=fileAnnos[pageNum];if(!annos||!annos.length)continue;
     const pageIdx=pageNum-1;if(pageIdx<0||pageIdx>=doc.getPageCount())continue;
     const page=doc.getPage(pageIdx);const{width:pW,height:pH}=page.getSize();
-    const pdfPage=await f.pdfJsDoc.getPage(pageNum);const vp=pdfPage.getViewport({scale:S.zoom*dpr});
-    const scX=pW/vp.width,scY=pH/vp.height;const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    const pdfPage=await f.pdfJsDoc.getPage(pageNum);const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
     for(const a of annos){
-      const os=a._ocrScale||1;const sf=os>1?1/os*S.zoom:1;
+      if(a._tePreview) continue;
+      const annoZoom = a._zoom || S.zoom;
+      const annoDpr = a._dpr || dpr;
+      const vp2 = await pdfPage.getViewport({scale: annoZoom * annoDpr});
+      const scX = pW / vp2.width, scY = pH / vp2.height;
+      const os=a._ocrScale||1;const sf=os>1?1/os*annoZoom:1;
       const px=a.x*scX*sf,py=pH-(a.y*scY*sf);const pw=a.w*scX*sf,ph_=a.h*scY*sf;
       const rgb=hexToRgb(a.color||'#000000');const[r,g,b]=[rgb[0],rgb[1],rgb[2]];
       switch(a.type){
@@ -4000,6 +4009,7 @@ function selectAnno(e) {
 }
 
 function hitTestAnno(a, mx, my) {
+  if (!a || !a.type || a._tePreview) return false;
   const pad = 8;
   switch(a.type) {
     case 'highlight': case 'redact': case 'rect': case 'image':
