@@ -2616,19 +2616,29 @@ async function bakeAnnotations(doc,fileIdx){
       if(a._tePreview) continue;
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
-      const annoRot = a._rot || 0; // rotation stored at draw time
+      const annoRot = a._rot || 0;
+      // Use pdf.js viewport for accurate coordinate conversion including rotation
       const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
+      // convertToPdfPoint converts canvas coords -> PDF coords (handles rotation)
+      const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x, a.y);
+      const [pdfX1, pdfY1] = vp2.convertToPdfPoint(a.x + (a.w||0), a.y + (a.h||0));
+      const px = Math.min(pdfX0, pdfX1);
+      const py = Math.min(pdfY0, pdfY1);
+      const pw = Math.abs(pdfX1 - pdfX0);
+      const ph_ = Math.abs(pdfY1 - pdfY0);
+      // For line/pen we still need scX/scY
       const scX = pW / vp2.width, scY = pH / vp2.height;
-      const os=a._ocrScale||1;const sf=os>1?1/os*annoZoom:1;
-      const px=a.x*scX*sf,py=pH-(a.y*scY*sf);const pw=a.w*scX*sf,ph_=a.h*scY*sf;
       const rgb=hexToRgb(a.color||'#000000');const[r,g,b]=[rgb[0],rgb[1],rgb[2]];
       switch(a.type){
         case 'highlight':page.drawRectangle({x:px,y:py-ph_,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:a.opacity*.4,borderWidth:0});break;
         case 'redact':page.drawRectangle({x:px,y:Math.max(0,py-ph_),width:Math.max(1,pw),height:Math.max(1,ph_),color:PDFLib.rgb(r,g,b),opacity:1,borderWidth:0});break;
         case 'rect':page.drawRectangle({x:px,y:py-ph_,width:pw,height:ph_,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
         case 'circle':page.drawEllipse({x:px+pw/2,y:py-ph_/2,xScale:pw/2,yScale:ph_/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
-        case 'line':case 'arrow':page.drawLine({start:{x:a.x1*scX,y:pH-a.y1*scY},end:{x:a.x2*scX,y:pH-a.y2*scY},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});break;
-        case 'pen':if(a.points&&a.points.length>1){for(let i=1;i<a.points.length;i++){page.drawLine({start:{x:a.points[i-1].x*scX,y:pH-a.points[i-1].y*scY},end:{x:a.points[i].x*scX,y:pH-a.points[i].y*scY},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}}break;
+        case 'line':case 'arrow':{
+          const [lx1,ly1]=vp2.convertToPdfPoint(a.x1,a.y1);
+          const [lx2,ly2]=vp2.convertToPdfPoint(a.x2,a.y2);
+          page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});break;}
+        case 'pen':if(a.points&&a.points.length>1){for(let i=1;i<a.points.length;i++){const[px1,py1]=vp2.convertToPdfPoint(a.points[i-1].x,a.points[i-1].y);const[px2,py2]=vp2.convertToPdfPoint(a.points[i].x,a.points[i].y);page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}}break;
         case 'text':if(a.text){const lines=a.text.split('\n');const fs=Math.max(6,(a.fontSize||14)*scY*.7);lines.forEach((ln,li)=>{try{page.drawText(ln,{x:px,y:py-(li+1)*fs*1.2,size:fs,font,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}catch{}});}break;
         case 'image':if(a._src){try{const resp=await fetch(a._src);const ab=await resp.arrayBuffer();const pdfImg=a._src.includes('png')?await doc.embedPng(ab):await doc.embedJpg(ab);page.drawImage(pdfImg,{x:px,y:py-ph_,width:pw,height:ph_,opacity:a.opacity});}catch{}}break;
       }
