@@ -4295,7 +4295,7 @@ async function teLoadPage() {
         el.className = 'te-overlay-box';
         el.value = w.text;
         el.rows = 1;
-        el.style.cssText = `left:${teItem.vx}px;top:${teItem.vy}px;width:${teItem.vw}px;height:${teItem.vh}px;font-size:${vfs}px;`;
+        el.style.cssText = `left:${teItem.vx}px;top:${teItem.vy}px;width:${teItem.vw}px;height:${teItem.vh}px;font-size:${vfs}px;font-family:${teItem.fontName||'Arial,sans-serif'};`;
         el.title = `OCR: "${w.text.substring(0,30)}"`;
 
         el.addEventListener('focus', () => {
@@ -4378,7 +4378,13 @@ async function teLoadPage() {
     el.className = 'te-overlay-box';
     el.value = item.str;
     el.rows = 1;
-    el.style.cssText = `left:${vx}px;top:${vy}px;width:${vw}px;height:${vh}px;font-size:${vfs}px;`;
+    // Map font name to CSS font-family
+    const fontFam = teItem.fontName
+      ? teItem.fontName.replace(/-Bold|-Italic|-BoldItalic/gi,'').trim() + ',serif'
+      : 'Arial,sans-serif';
+    const isBold = /bold/i.test(teItem.fontName||'');
+    const isItalic = /italic|oblique/i.test(teItem.fontName||'');
+    el.style.cssText = `left:${vx}px;top:${vy}px;width:${vw}px;height:${vh}px;font-size:${vfs}px;font-family:${fontFam};font-weight:${isBold?'bold':'normal'};font-style:${isItalic?'italic':'normal'};`;
     el.title = `Klik for at redigere: "${item.str.substring(0,40)}"`;
 
     el.addEventListener('input', () => {
