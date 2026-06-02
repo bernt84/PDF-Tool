@@ -2242,7 +2242,9 @@ async function rotateSingle(){
     const doc=await PDFLib.PDFDocument.load(bufCopy);
     const page=doc.getPage(S.page-1);
     const currentRot=page.getRotation().angle||0;
-    page.setRotation(PDFLib.degrees((currentRot+90)%360));
+    const newRot=(currentRot+90)%360;
+    console.log('PDF rotation:', currentRot, '->', newRot);
+    page.setRotation(PDFLib.degrees(newRot));
     const newBuf=await doc.save();
     f.buf=newBuf;
     // Reload pdfJsDoc with new buffer
