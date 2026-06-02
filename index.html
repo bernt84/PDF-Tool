@@ -2248,14 +2248,15 @@ async function rotateSingle(){
     // Reload pdfJsDoc with new buffer
     const blob=new Blob([newBuf],{type:'application/pdf'});
     const url=URL.createObjectURL(blob);
-    f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
-    // Reset view rotation since it's now baked in
+    f.pdfJsDoc=await pdfjsLib.getDocument({url,disableAutoFetch:true}).promise;
+    // Reset ALL rotation state - pdf.js now handles rotation internally
     S.rotation=0;
-    f.pageRotations[S.page]=0;
+    if(f.pageRotations) f.pageRotations[S.page]=0;
     f._viewRotation=0;
+    f._hasRotation=false;
     renderFileList();
     await renderPage();
-    toast('Side '+S.page+' roteret permanent ✓','ok');
+    toast('Side '+S.page+' roteret ✓','ok');
   } catch(e) {
     console.error('Rotate error:', e);
     renderPage();
