@@ -2225,7 +2225,8 @@ function zoomFit(){
   });
 }
 async function rotateSingle(){
-  if(S.activeIdx<0)return;
+  console.log('rotateSingle called, activeIdx=', S.activeIdx);
+  if(S.activeIdx<0){toast('Ingen fil åben',true);return;}
   const f=S.files[S.activeIdx];
   // Update view rotation
   S.rotation=(S.rotation+90)%360;
