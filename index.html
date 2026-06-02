@@ -3706,17 +3706,47 @@ const MuEditor = {
       div.dataset.blockIdx = i;
       div.title = block.origText.substring(0, 50);
 
-      // Show text as a visible overlay
-      const span = document.createElement('span');
-      span.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;font-size:${Math.max(6,fontSize)}px;color:transparent;white-space:nowrap;overflow:hidden;padding:0 1px;font-family:${block.fontName || 'serif'};`;
-      span.textContent = block.text;
-      div.appendChild(span);
-
-      // Click to edit
-      div.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._startEdit(div, block, i, left, top, width, height, fontSize, colorStr);
+      // Textarea that matches PDF font exactly
+      const ta = document.createElement('textarea');
+      const ffam = (block.fontName||'').replace(/-Bold|-Italic|-BoldItalic/gi,'').trim() || 'Arial';
+      const fbold = /bold/i.test(block.fontName||'') ? 'bold' : 'normal';
+      const fital = /italic|oblique/i.test(block.fontName||'') ? 'italic' : 'normal';
+      const fcolor = colorStr === 'rgb(0,0,0)' ? '#111' : colorStr;
+      ta.className = 'te-overlay-box';
+      ta.value = block.text;
+      ta.rows = 1;
+      ta.style.cssText = `position:absolute;inset:0;width:100%;height:100%;font-size:${Math.max(6,fontSize)}px;font-family:${ffam},serif;font-weight:${fbold};font-style:${fital};color:transparent;background:transparent;border:none;padding:0 1px;resize:none;overflow:hidden;`;
+      ta.addEventListener('focus', () => {
+        ta.style.color = fcolor;
+        ta.style.background = 'rgba(255,255,255,0.97)';
+        ta.value = block.text;
       });
+      ta.addEventListener('input', () => {
+        ta.style.width = Math.max(width, ta.value.length * fontSize * 0.62 + 10) + 'px';
+      });
+      ta.addEventListener('blur', () => {
+        block.text = ta.value;
+        block.modified = (ta.value !== block.origText);
+        if (block.modified) {
+          ta.style.color = fcolor;
+          ta.style.background = 'rgba(255,255,240,0.95)';
+          ta.style.border = '1px solid rgba(34,197,94,.5)';
+          div.classList.add('modified');
+        } else {
+          ta.style.color = 'transparent';
+          ta.style.background = 'transparent';
+          ta.style.border = 'none';
+          div.classList.remove('modified');
+        }
+        MuEditor._updateEditCount();
+      });
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { ta.value = block.origText; block.text = block.origText; block.modified = false; ta.blur(); }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
+      });
+      div.appendChild(ta);
+
+      // Textarea handles editing directly
 
       ov.appendChild(div);
       block._el = div;
@@ -4295,7 +4325,10 @@ async function teLoadPage() {
         el.className = 'te-overlay-box';
         el.value = w.text;
         el.rows = 1;
-        el.style.cssText = `left:${teItem.vx}px;top:${teItem.vy}px;width:${teItem.vw}px;height:${teItem.vh}px;font-size:${vfs}px;font-family:${teItem.fontName||'Arial,sans-serif'};`;
+        const ocrFam = (teItem.fontName||'Arial').replace(/-Bold|-Italic|-BoldItalic/gi,'').trim();
+        const ocrBold = /bold/i.test(teItem.fontName||'') ? 'bold' : 'normal';
+        const ocrItal = /italic|oblique/i.test(teItem.fontName||'') ? 'italic' : 'normal';
+        el.style.cssText = `left:${teItem.vx}px;top:${teItem.vy - teItem.vfs*0.1}px;width:${teItem.vw}px;height:${teItem.vh}px;font-size:${vfs}px;font-family:${ocrFam},sans-serif;font-weight:${ocrBold};font-style:${ocrItal};`;
         el.title = `OCR: "${w.text.substring(0,30)}"`;
 
         el.addEventListener('focus', () => {
