@@ -2236,7 +2236,9 @@ async function rotateSingle(){
 
   // Permanently bake rotation into PDF buffer using pdf-lib
   try {
-    const doc=await PDFLib.PDFDocument.load(f.buf);
+    console.log('Rotating: buf size', f.buf?.byteLength, 'page', S.page);
+    const bufCopy = f.buf.slice(0); // fresh copy
+    const doc=await PDFLib.PDFDocument.load(bufCopy);
     const page=doc.getPage(S.page-1);
     const currentRot=page.getRotation().angle||0;
     page.setRotation(PDFLib.degrees((currentRot+90)%360));
