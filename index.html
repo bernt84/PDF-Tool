@@ -1563,7 +1563,8 @@ function endDraw(e){
   if(!S._drawing)return;S._drawing=false;const{x,y}=canvasCoords(e);
   const dx=Math.abs(x-S._startX),dy=Math.abs(y-S._startY);if(dx<3&&dy<3&&S.tool!=='pen')return;
   const annos=getAnnos(S.activeIdx,S.page);
-  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio});
+  const _pageRot=(S.files[S.activeIdx]&&S.files[S.activeIdx].pageRotations&&S.files[S.activeIdx].pageRotations[S.page])||0;
+  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:(S.rotation+_pageRot)%360});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
 }
 async function resolveAnnoCoords(anno,fileIdx,pageNum){
@@ -2615,7 +2616,8 @@ async function bakeAnnotations(doc,fileIdx){
       if(a._tePreview) continue;
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
-      const vp2 = await pdfPage.getViewport({scale: annoZoom * annoDpr});
+      const annoRot = a._rot || 0; // rotation stored at draw time
+      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
       const scX = pW / vp2.width, scY = pH / vp2.height;
       const os=a._ocrScale||1;const sf=os>1?1/os*annoZoom:1;
       const px=a.x*scX*sf,py=pH-(a.y*scY*sf);const pw=a.w*scX*sf,ph_=a.h*scY*sf;
