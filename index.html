@@ -313,9 +313,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   border-radius:2px;
   outline:none;
   font-family:inherit;color:transparent;caret-color:var(--acc);
-  padding:0;margin:0;resize:none;overflow:hidden;white-space:pre;
+  padding:0 2px;margin:0;resize:none;overflow:visible;white-space:pre;
   line-height:1;z-index:40;
   transition:background .1s,border-color .1s;
+  min-width:20px;
 }
 .te-overlay-box:hover{
   background:rgba(59,130,246,.18);
@@ -4304,11 +4305,19 @@ async function teLoadPage() {
           // Temporarily remove preview for this item so canvas is clean
           // Nothing to clear - preview is shown via textarea styling
         });
+        el.addEventListener('input', () => {
+          // Auto-expand width as user types
+          el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+        });
         el.addEventListener('blur', () => {
           teItem.newText = el.value;
           const changed = el.value !== teItem.origText;
           el.classList.toggle('modified', changed);
           el.style.height = teItem.vh + 'px';
+          // Keep expanded width if modified
+          if (changed) {
+            el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+          }
           tePreviewChange(teItem);
           const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
           document.getElementById('te-edit-info').textContent =
@@ -4372,6 +4381,9 @@ async function teLoadPage() {
     el.style.cssText = `left:${vx}px;top:${vy}px;width:${vw}px;height:${vh}px;font-size:${vfs}px;`;
     el.title = `Klik for at redigere: "${item.str.substring(0,40)}"`;
 
+    el.addEventListener('input', () => {
+      el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+    });
     el.addEventListener('focus', () => {
       el.style.height = 'auto';
       el.style.minHeight = vh + 'px';
