@@ -2228,43 +2228,23 @@ async function rotateSingle(){
   if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];
 
+  // Step 1: Update visual rotation immediately
+  S.rotation=(S.rotation+90)%360;
+  f._viewRotation=S.rotation;
+  f._hasRotation=true;
+  renderPage();
+  toast('Roteret til '+S.rotation+'°');
+
+  // Step 2: Also bake into PDF buffer silently (for correct download)
   try {
-    // Bake rotation into PDF with pdf-lib
-    const doc = await PDFLib.PDFDocument.load(f.buf.slice(0));
-    const page = doc.getPage(S.page-1);
-    const cur = page.getRotation().angle || 0;
-    const next = (cur + 90) % 360;
-    page.setRotation(PDFLib.degrees(next));
-    const newBuf = await doc.save();
-    f.buf = newBuf;
-
-    // Reload pdf.js — pass the raw PDF rotation as our own,
-    // then counteract it so pdf.js shows 0° internal
-    const blob = new Blob([newBuf], {type:'application/pdf'});
-    const url = URL.createObjectURL(blob);
-    const newDoc = await pdfjsLib.getDocument(url).promise;
-    f.pdfJsDoc = newDoc;
-
-    // Reset all rotation tracking — pdf has correct rotation baked in
-    // We use S.rotation to counteract pdf.js auto-rotation
-    // pdf.js adds PDF internal rotation to our rotation param
-    // So pass -next to get 0° visual... but actually pass 0 and 
-    // let pdf.js show the baked rotation naturally
-    S.rotation = 0;
-    f._viewRotation = 0;
-    f._hasRotation = false;
-    if(f.pageRotations) delete f.pageRotations[S.page];
-
-    renderFileList();
-    await renderPage();
-    toast('Roteret ✓', 'ok');
+    const doc=await PDFLib.PDFDocument.load(f.buf.slice(0));
+    const page=doc.getPage(S.page-1);
+    const cur=page.getRotation().angle||0;
+    page.setRotation(PDFLib.degrees((cur+90)%360));
+    f.buf=await doc.save();
+    // DON'T reload pdfJsDoc - keep visual rotation working
   } catch(e) {
-    console.error('Rotate failed:', e);
-    // Fallback to visual only
-    S.rotation = (S.rotation+90)%360;
-    f._viewRotation = S.rotation;
-    renderPage();
-    toast('Roteret til '+S.rotation+'°');
+    console.error('Bake rotation failed:', e);
   }
 }
 
