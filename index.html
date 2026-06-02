@@ -2672,6 +2672,7 @@ async function bakeAnnotations(doc,fileIdx){
       const [pdfX1, pdfY1] = vp2.convertToPdfPoint(a.x + (a.w||0), a.y + (a.h||0));
       const px = Math.min(pdfX0, pdfX1);
       const py = Math.min(pdfY0, pdfY1);
+      if(a.type==='highlight'||a.type==='redact') console.log('bake coords: canvas',Math.round(a.x),Math.round(a.y),'->pdf',Math.round(px),Math.round(py),'rot:',annoRot,'pdfSize:',pW,'x',pH);
       const pw = Math.abs(pdfX1 - pdfX0);
       const ph_ = Math.abs(pdfY1 - pdfY0);
       // For line/pen we still need scX/scY
