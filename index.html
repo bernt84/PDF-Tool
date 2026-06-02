@@ -2224,7 +2224,41 @@ function zoomFit(){
     renderPage();
   });
 }
-function rotateSingle(){S.rotation=(S.rotation+90)%360;if(S.activeIdx>=0){S.files[S.activeIdx]._viewRotation=S.rotation;S.files[S.activeIdx]._hasRotation=true;renderFileList();}renderPage();toast('Roteret til '+S.rotation+'°');}
+async function rotateSingle(){
+  if(S.activeIdx<0)return;
+  const f=S.files[S.activeIdx];
+  // Update view rotation
+  S.rotation=(S.rotation+90)%360;
+  if(!f.pageRotations)f.pageRotations={};
+  f.pageRotations[S.page]=((f.pageRotations[S.page]||0)+90)%360;
+  f._viewRotation=S.rotation;
+  f._hasRotation=true;
+
+  // Permanently bake rotation into PDF buffer using pdf-lib
+  try {
+    const doc=await PDFLib.PDFDocument.load(f.buf);
+    const page=doc.getPage(S.page-1);
+    const currentRot=page.getRotation().angle||0;
+    page.setRotation(PDFLib.degrees((currentRot+90)%360));
+    const newBuf=await doc.save();
+    f.buf=newBuf;
+    // Reload pdfJsDoc with new buffer
+    const blob=new Blob([newBuf],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
+    // Reset view rotation since it's now baked in
+    S.rotation=0;
+    f.pageRotations[S.page]=0;
+    f._viewRotation=0;
+    renderFileList();
+    await renderPage();
+    toast('Side '+S.page+' roteret permanent ✓','ok');
+  } catch(e) {
+    console.error('Rotate error:', e);
+    renderPage();
+    toast('Roteret til '+S.rotation+'°');
+  }
+}
 
 // ================================================================
 // PAGE MANAGER
