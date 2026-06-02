@@ -1566,6 +1566,7 @@ function endDraw(e){
   const _pageRot=(S.files[S.activeIdx]&&S.files[S.activeIdx].pageRotations&&S.files[S.activeIdx].pageRotations[S.page])||0;
   annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:(S.rotation+_pageRot)%360});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
+  setTimeout(()=>bakePageNow(S.activeIdx,S.page),50);
 }
 async function resolveAnnoCoords(anno,fileIdx,pageNum){
   if(!anno._needsCoordConvert)return;
@@ -2227,51 +2228,47 @@ function zoomFit(){
 async function rotateSingle(){
   if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];
+  const btn=document.getElementById('tb-save');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
 
-  // Step 1: Transform existing annotations to match new rotation
-  const cv = document.getElementById('pdf-canvas');
-  const cW = cv.width, cH = cv.height; // canvas pixels
-  const annos = getAnnos(S.activeIdx, S.page);
-  annos.forEach(a => {
-    if (a._tePreview) return;
-    // Rotate coords 90° CW: new_x = cH - old_y - old_h, new_y = old_x
-    if (a.x !== undefined) {
-      const ox=a.x, oy=a.y, ow=a.w||0, oh=a.h||0;
-      a.x = cH - oy - oh;
-      a.y = ox;
-      a.w = oh;
-      a.h = ow;
-    }
-    if (a.x1 !== undefined) {
-      const ox1=a.x1,oy1=a.y1,ox2=a.x2,oy2=a.y2;
-      a.x1 = cH - oy1; a.y1 = ox1;
-      a.x2 = cH - oy2; a.y2 = ox2;
-    }
-    if (a.points) {
-      a.points = a.points.map(p => ({x: cH - p.y, y: p.x}));
-    }
-    // Update stored rotation
-    a._rot = ((a._rot||0) + 90) % 360;
-  });
-
-  // Step 2: Update visual rotation immediately
-  S.rotation=(S.rotation+90)%360;
-  f._viewRotation=S.rotation;
-  f._hasRotation=true;
-  renderPage();
-  toast('Roteret til '+S.rotation+'°');
-
-  // Step 2: Also bake into PDF buffer silently (for correct download)
   try {
+    // 1. Bake rotation into PDF buffer
     const doc=await PDFLib.PDFDocument.load(f.buf.slice(0));
-    const page=doc.getPage(S.page-1);
-    const cur=page.getRotation().angle||0;
-    page.setRotation(PDFLib.degrees((cur+90)%360));
+    const pdfPage=doc.getPage(S.page-1);
+    const cur=pdfPage.getRotation().angle||0;
+    const newRot=(cur+90)%360;
+    pdfPage.setRotation(PDFLib.degrees(newRot));
+    
+    // 2. Also bake any existing annotations for this page then clear them
+    // (they are now part of the visual, not separate)
+    // For now: clear annotations since they'd be at wrong coords
+    // User should annotate AFTER rotating
+    if(S.annos[S.activeIdx]&&S.annos[S.activeIdx][S.page]&&S.annos[S.activeIdx][S.page].length>0){
+      toast('Roterer — annoteringer på siden nulstilles', true);
+      S.annos[S.activeIdx][S.page]=[];
+    }
+    
     f.buf=await doc.save();
-    // DON'T reload pdfJsDoc - keep visual rotation working
+    
+    // 3. Reload pdfJsDoc with new buf
+    const blob=new Blob([f.buf],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
+    
+    // 4. Reset rotation state — PDF now has rotation baked in
+    S.rotation=0;
+    f._viewRotation=0;
+    f._hasRotation=false;
+    if(f.pageRotations) f.pageRotations[S.page]=0;
+    
+    renderFileList();
+    await renderPage();
+    toast('Side '+S.page+' roteret ✓','ok');
   } catch(e) {
-    console.error('Bake rotation failed:', e);
+    console.error('Rotate error:',e);
+    toast('Fejl: '+e.message,true);
   }
+  if(btn){btn.disabled=false;btn.innerHTML='⬇ Download';}
 }
 
 // ================================================================
@@ -2664,9 +2661,8 @@ async function bakeAnnotations(doc,fileIdx){
       if(a._tePreview) continue;
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
-      const annoRot = a._rot || 0;
-      // Use pdf.js viewport for accurate coordinate conversion including rotation
-      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
+      // PDF rotation is baked in - always use 0 for annotation coords
+      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: 0});
       // convertToPdfPoint converts canvas coords -> PDF coords (handles rotation)
       // Canvas coords are in canvas pixels (zoom*dpr), convert to CSS pixels first
       const d = annoDpr;
@@ -4291,6 +4287,97 @@ function checkMuPDFStatus() {
   const cross = self.crossOriginIsolated;
   toast('SharedArrayBuffer: ' + (sab?'✓':'✗') + ' | crossOriginIsolated: ' + (cross?'✓':'✗') + ' | MuPDF: ' + (MuPDF.ready?'klar':MuPDF.loading?'loader':'ikke startet'));
   console.log('SAB:', sab, 'COI:', cross, 'MuPDF ready:', MuPDF.ready);
+}
+
+
+// Bake current page annotations into PDF buffer immediately
+async function bakePageNow(fileIdx, pageNum) {
+  const f = S.files[fileIdx];
+  if (!f || !f.buf) return;
+  const annos = getAnnos(fileIdx, pageNum);
+  if (!annos.length) return;
+  try {
+    const doc = await PDFLib.PDFDocument.load(f.buf.slice(0));
+    const page = doc.getPage(pageNum - 1);
+    const {width: pW, height: pH} = page.getSize();
+    const pdfPage = await f.pdfJsDoc.getPage(pageNum);
+    const dpr = window.devicePixelRatio;
+    const vp = pdfPage.getViewport({scale: S.zoom * dpr, rotation: 0});
+    const font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+
+    for (const a of annos) {
+      if (a._tePreview || a._baked) continue;
+      const annoZoom = a._zoom || S.zoom;
+      const annoDpr = a._dpr || dpr;
+      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: 0});
+      const d = annoDpr;
+      const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x/d, a.y/d);
+      const [pdfX1, pdfY1] = vp2.convertToPdfPoint((a.x+(a.w||0))/d, (a.y+(a.h||0))/d);
+      const px = Math.min(pdfX0, pdfX1);
+      const py = Math.min(pdfY0, pdfY1);
+      const pw = Math.abs(pdfX1-pdfX0);
+      const ph_ = Math.abs(pdfY1-pdfY0);
+      const scX = pW / vp2.width, scY = pH / vp2.height;
+      const col = a.color||'#000000';
+      const hex = col.replace('#','');
+      const r=parseInt(hex.substring(0,2),16)/255||0;
+      const g=parseInt(hex.substring(2,4),16)/255||0;
+      const b=parseInt(hex.substring(4,6),16)/255||0;
+
+      switch(a.type) {
+        case 'highlight':
+          page.drawRectangle({x:px,y:py,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:(a.opacity||0.4)*0.5,borderWidth:0});
+          break;
+        case 'redact':
+          page.drawRectangle({x:px,y:py,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1,borderWidth:0});
+          break;
+        case 'rect':
+          page.drawRectangle({x:px,y:py,width:pw,height:ph_,borderColor:PDFLib.rgb(r,g,b),borderWidth:Math.max(1,a.strokeSize*scX),opacity:a.opacity||1,color:undefined});
+          break;
+        case 'circle':
+          page.drawEllipse({x:px+pw/2,y:py+ph_/2,xScale:pw/2,yScale:ph_/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:Math.max(1,a.strokeSize*scX),opacity:a.opacity||1,color:undefined});
+          break;
+        case 'line': {
+          const [lx1,ly1]=vp2.convertToPdfPoint(a.x1/d,a.y1/d);
+          const [lx2,ly2]=vp2.convertToPdfPoint(a.x2/d,a.y2/d);
+          page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:Math.max(1,a.strokeSize*scX),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+          break;
+        }
+        case 'arrow': {
+          const [ax1,ay1]=vp2.convertToPdfPoint(a.x1/d,a.y1/d);
+          const [ax2,ay2]=vp2.convertToPdfPoint(a.x2/d,a.y2/d);
+          const th=Math.max(1,a.strokeSize*scX);
+          page.drawLine({start:{x:ax1,y:ay1},end:{x:ax2,y:ay2},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+          const ang=Math.atan2(ay2-ay1,ax2-ax1);
+          const hs=Math.max(th*4,8);
+          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang+Math.PI*0.8)*hs,y:ay2+Math.sin(ang+Math.PI*0.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang-Math.PI*0.8)*hs,y:ay2+Math.sin(ang-Math.PI*0.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+          break;
+        }
+        case 'pen':
+          if(a.points&&a.points.length>1){
+            for(let i=1;i<a.points.length;i++){
+              const[px1,py1]=vp2.convertToPdfPoint(a.points[i-1].x/d,a.points[i-1].y/d);
+              const[px2,py2]=vp2.convertToPdfPoint(a.points[i].x/d,a.points[i].y/d);
+              page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:Math.max(1,a.strokeSize*scX),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            }
+          }
+          break;
+        case 'text':
+          if(a.text){try{page.drawText(a.text,{x:px,y:py,size:Math.max(6,(a.fontSize||12)*scY*0.8),font,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});}catch(e){}}
+          break;
+      }
+      a._baked = true; // mark as baked
+    }
+
+    f.buf = await doc.save();
+    // Clear baked annotations from memory (they're now in the PDF)
+    if(S.annos[fileIdx] && S.annos[fileIdx][pageNum]) {
+      S.annos[fileIdx][pageNum] = S.annos[fileIdx][pageNum].filter(a => !a._baked);
+    }
+  } catch(e) {
+    console.error('bakePageNow error:', e);
+  }
 }
 
 // Wire up label file inputs
