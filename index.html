@@ -2668,11 +2668,12 @@ async function bakeAnnotations(doc,fileIdx){
       // Use pdf.js viewport for accurate coordinate conversion including rotation
       const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
       // convertToPdfPoint converts canvas coords -> PDF coords (handles rotation)
-      const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x, a.y);
-      const [pdfX1, pdfY1] = vp2.convertToPdfPoint(a.x + (a.w||0), a.y + (a.h||0));
+      // Canvas coords are in canvas pixels (zoom*dpr), convert to CSS pixels first
+      const d = annoDpr;
+      const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x/d, a.y/d);
+      const [pdfX1, pdfY1] = vp2.convertToPdfPoint((a.x+(a.w||0))/d, (a.y+(a.h||0))/d);
       const px = Math.min(pdfX0, pdfX1);
       const py = Math.min(pdfY0, pdfY1);
-      if(a.type==='highlight'||a.type==='redact') console.log('bake coords: canvas',Math.round(a.x),Math.round(a.y),'->pdf',Math.round(px),Math.round(py),'rot:',annoRot,'pdfSize:',pW,'x',pH);
       const pw = Math.abs(pdfX1 - pdfX0);
       const ph_ = Math.abs(pdfY1 - pdfY0);
       // For line/pen we still need scX/scY
@@ -2683,11 +2684,23 @@ async function bakeAnnotations(doc,fileIdx){
         case 'redact':page.drawRectangle({x:px,y:Math.max(0,py-ph_),width:Math.max(1,pw),height:Math.max(1,ph_),color:PDFLib.rgb(r,g,b),opacity:1,borderWidth:0});break;
         case 'rect':page.drawRectangle({x:px,y:py-ph_,width:pw,height:ph_,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
         case 'circle':page.drawEllipse({x:px+pw/2,y:py-ph_/2,xScale:pw/2,yScale:ph_/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:a.strokeSize*scX,opacity:a.opacity});break;
-        case 'line':case 'arrow':{
-          const [lx1,ly1]=vp2.convertToPdfPoint(a.x1,a.y1);
-          const [lx2,ly2]=vp2.convertToPdfPoint(a.x2,a.y2);
+        case 'line':{
+          const [lx1,ly1]=vp2.convertToPdfPoint(a.x1/annoDpr,a.y1/annoDpr);
+          const [lx2,ly2]=vp2.convertToPdfPoint(a.x2/annoDpr,a.y2/annoDpr);
           page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});break;}
-        case 'pen':if(a.points&&a.points.length>1){for(let i=1;i<a.points.length;i++){const[px1,py1]=vp2.convertToPdfPoint(a.points[i-1].x,a.points[i-1].y);const[px2,py2]=vp2.convertToPdfPoint(a.points[i].x,a.points[i].y);page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}}break;
+        case 'arrow':{
+          const [ax1,ay1]=vp2.convertToPdfPoint(a.x1/annoDpr,a.y1/annoDpr);
+          const [ax2,ay2]=vp2.convertToPdfPoint(a.x2/annoDpr,a.y2/annoDpr);
+          const th=a.strokeSize*scX;
+          page.drawLine({start:{x:ax1,y:ay1},end:{x:ax2,y:ay2},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity});
+          // Arrowhead
+          const ang=Math.atan2(ay2-ay1,ax2-ax1);
+          const hs=Math.max(th*4,8);
+          const a1=ang+Math.PI*0.8, a2=ang-Math.PI*0.8;
+          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(a1)*hs,y:ay2+Math.sin(a1)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity});
+          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(a2)*hs,y:ay2+Math.sin(a2)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity});
+          break;}
+        case 'pen':if(a.points&&a.points.length>1){for(let i=1;i<a.points.length;i++){const[px1,py1]=vp2.convertToPdfPoint(a.points[i-1].x/annoDpr,a.points[i-1].y/annoDpr);const[px2,py2]=vp2.convertToPdfPoint(a.points[i].x/annoDpr,a.points[i].y/annoDpr);page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:a.strokeSize*scX,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}}break;
         case 'text':if(a.text){const lines=a.text.split('\n');const fs=Math.max(6,(a.fontSize||14)*scY*.7);lines.forEach((ln,li)=>{try{page.drawText(ln,{x:px,y:py-(li+1)*fs*1.2,size:fs,font,color:PDFLib.rgb(r,g,b),opacity:a.opacity});}catch{}});}break;
         case 'image':if(a._src){try{const resp=await fetch(a._src);const ab=await resp.arrayBuffer();const pdfImg=a._src.includes('png')?await doc.embedPng(ab):await doc.embedJpg(ab);page.drawImage(pdfImg,{x:px,y:py-ph_,width:pw,height:ph_,opacity:a.opacity});}catch{}}break;
       }
