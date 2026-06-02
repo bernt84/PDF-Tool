@@ -313,7 +313,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   border-radius:2px;
   outline:none;
   font-family:inherit;color:transparent;caret-color:var(--acc);
-  padding:0 2px;margin:0;resize:none;overflow:visible;white-space:pre;
+  padding:0 2px;margin:0;resize:none;overflow:hidden;white-space:pre;
   line-height:1;z-index:40;
   transition:background .1s,border-color .1s;
   min-width:20px;
@@ -4308,6 +4308,7 @@ async function teLoadPage() {
         el.addEventListener('input', () => {
           // Auto-expand width as user types
           el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+      el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
         });
         el.addEventListener('blur', () => {
           teItem.newText = el.value;
@@ -4317,6 +4318,7 @@ async function teLoadPage() {
           // Keep expanded width if modified
           if (changed) {
             el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+      el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
           }
           tePreviewChange(teItem);
           const mods = TE.items.filter(i => i.newText !== i.origText && !i.deleted).length;
@@ -4389,6 +4391,7 @@ async function teLoadPage() {
 
     el.addEventListener('input', () => {
       el.style.width = Math.max(teItem.vw, el.value.length * teItem.vfs * 0.62 + 10) + 'px';
+      el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
     });
     el.addEventListener('focus', () => {
       el.style.height = 'auto';
