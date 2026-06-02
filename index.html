@@ -3921,37 +3921,6 @@ function teShowModified() {
 // Hook into page changes
 // MuEditor reloads on page change via renderPage hook below
 
-// Hook into download — bake MuPDF edits
-const _origDownloadFilePDF = downloadFilePDF;
-async function downloadFilePDF(fileIdx) {
-  // If MuEditor has changes for this file, save via MuPDF
-  if (MuEditor.active && MuEditor.fileIdx === fileIdx && MuEditor.getModifiedBlocks().length > 0) {
-    const btn = document.getElementById('tb-save');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
-    try {
-      toast('MuPDF gemmer ændringer…');
-      const edits = MuEditor.getModifiedBlocks();
-      const resultBuf = await MuPDF.saveWithEdits(edits, MuEditor.page);
-      const blob = new Blob([resultBuf], {type: 'application/pdf'});
-      const url = URL.createObjectURL(blob);
-      const f = S.files[fileIdx];
-      const a = Object.assign(document.createElement('a'), {
-        href: url,
-        download: (S.customFn || f.name.replace(/\.pdf$/i,'')) + '.pdf'
-      });
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 6000);
-      toast('Download ✓', 'ok');
-    } catch(e) {
-      toast('MuPDF save fejl: ' + e.message, true);
-      await _origDownloadFilePDF(fileIdx);
-    }
-    const btn2 = document.getElementById('tb-save');
-    if (btn2) { btn2.disabled = false; btn2.innerHTML = '⬇ Download'; }
-  } else {
-    await _origDownloadFilePDF(fileIdx);
-  }
-}
 
 // MuPDF loads when user clicks "Rediger tekst" - no auto-init needed
 
