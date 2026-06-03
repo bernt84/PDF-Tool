@@ -2249,7 +2249,8 @@ async function rotateSingle(){
       S.annos[S.activeIdx][S.page]=[];
     }
     
-    f.buf=await doc.save();
+    const rotSaved = await doc.save();
+    f.buf = rotSaved.buffer ? rotSaved.buffer.slice(rotSaved.byteOffset, rotSaved.byteOffset + rotSaved.byteLength) : rotSaved.slice(0);
     
     // 3. Reload pdfJsDoc with new buf
     const blob=new Blob([f.buf],{type:'application/pdf'});
@@ -4372,7 +4373,8 @@ async function bakePageNow(fileIdx, pageNum) {
       a._baked = true; // mark as baked
     }
 
-    f.buf = await doc.save();
+    const saved = await doc.save();
+    f.buf = saved.buffer ? saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength) : saved.slice(0);
     // Clear baked annotations from memory (they're now in the PDF)
     if(S.annos[fileIdx] && S.annos[fileIdx][pageNum]) {
       S.annos[fileIdx][pageNum] = S.annos[fileIdx][pageNum].filter(a => !a._baked);
