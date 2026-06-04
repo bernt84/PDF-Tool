@@ -2261,15 +2261,22 @@ async function rotateSingle(){
     const url=URL.createObjectURL(blob);
     f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
     
-    // 4. Reset rotation state — PDF now has rotation baked in
-    S.rotation=0;
-    f._viewRotation=0;
-    f._hasRotation=false;
-    if(f.pageRotations) f.pageRotations[S.page]=0;
+    // 4. Set rotation state to match baked rotation
+    // pdf.js ignores PDF internal /Rotate — we must pass it explicitly
+    S.rotation = newRot;
+    f._viewRotation = newRot;
+    f._hasRotation = newRot !== 0;
+    if(!f.pageRotations) f.pageRotations = {};
+    f.pageRotations[S.page] = 0; // no extra page rotation on top
     
     console.log('rotateSingle: done, new buf=', f.buf?.byteLength);
     renderFileList();
+    const savedZoom = S.zoom; // preserve zoom
     await renderPage();
+    if(Math.abs(S.zoom - savedZoom) > 0.01) {
+      S.zoom = savedZoom;
+      await renderPage();
+    }
     toast('Side '+S.page+' roteret ✓','ok');
   } catch(e) {
     console.error('Rotate error:',e);
