@@ -2237,7 +2237,6 @@ async function rotateSingle(){
     const pdfPage=doc.getPage(S.page-1);
     const cur=pdfPage.getRotation().angle||0;
     const newRot=(cur+90)%360;
-    console.log('Setting rotation from',cur,'to',newRot);
     // Set rotation directly in the page dict to ensure it's written
     pdfPage.node.set(PDFLib.PDFName.of('Rotate'), PDFLib.PDFNumber.of(newRot));
     // Also use the API method
@@ -2268,7 +2267,6 @@ async function rotateSingle(){
     if(!f.pageRotations) f.pageRotations = {};
     f.pageRotations[S.page] = 0; // no extra page rotation on top
     
-    console.log('rotateSingle: done, new buf=', f.buf?.byteLength);
     renderFileList();
     await renderPage();
     zoomFit(); // fit rotated page to screen
@@ -4367,8 +4365,7 @@ async function bakePageNow(fileIdx, pageNum) {
           pdfH = (a.h||0) / s;
         }
 
-        console.log('bake:', a.type, 'rot:', rot, 'pdf coords:', Math.round(pdfX), Math.round(pdfY), Math.round(pdfW), Math.round(pdfH), '/', Math.round(pW), Math.round(pH));
-
+  
         const col = a.color||'#ffff00';
         const hex = col.replace('#','');
         const r=parseInt(hex.substring(0,2),16)/255||0;
@@ -4425,10 +4422,8 @@ async function bakePageNow(fileIdx, pageNum) {
     f.buf = saved instanceof Uint8Array
       ? saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength)
       : saved.slice(0);
-    // Remove baked annotations
-    if(S.annos[fileIdx] && S.annos[fileIdx][pageNum]) {
-      S.annos[fileIdx][pageNum] = S.annos[fileIdx][pageNum].filter(a => !a._baked);
-    }
+    // Keep baked annotations visible - they're already in the PDF buf
+    // redrawAnnos will still show them
   } catch(e) {
     console.error('bakePageNow error:', e.message);
   }
