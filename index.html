@@ -693,7 +693,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
   <div id="file-panel">
     <div id="fp-top">
-      <input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)"/>
+      <input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off" name="filesearch"/>
       <button class="btn bGh bSm" onclick="selAll()">☑</button>
       <button class="btn bGh bSm" onclick="selNone()">☐</button>
     </div>
@@ -4381,7 +4381,8 @@ async function bakePageNow(fileIdx, pageNum) {
           if(a.text){try{page.drawText(a.text,{x:px,y:py,size:Math.max(6,(a.fontSize||12)*scY*0.8),font,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});}catch(e){}}
           break;
       }
-      a._baked = true; // mark as baked
+        a._baked = true;
+
     }
 
     const saved = await doc.save();
