@@ -1565,7 +1565,7 @@ function endDraw(e){
   const annos=getAnnos(S.activeIdx,S.page);
   annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:S.rotation});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
-  setTimeout(()=>bakePageNow(S.activeIdx,S.page),50);
+  bakePageNow(S.activeIdx,S.page); // bake immediately
 }
 async function resolveAnnoCoords(anno,fileIdx,pageNum){
   if(!anno._needsCoordConvert)return;
@@ -2229,6 +2229,10 @@ async function rotateSingle(){
   const f=S.files[S.activeIdx];
   const btn=document.getElementById('tb-save');
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
+  // Bake any pending annotations before rotating
+  const bufBefore = f.buf?.byteLength||0;
+  await bakePageNow(S.activeIdx, S.page);
+  console.log('buf before rotate:', bufBefore, '-> after bake:', f.buf?.byteLength);
 
   console.log('rotateSingle: start, buf=', f.buf?.byteLength);
   try {
@@ -2242,12 +2246,9 @@ async function rotateSingle(){
     // Also use the API method
     pdfPage.setRotation(PDFLib.degrees(newRot));
     
-    // 2. Also bake any existing annotations for this page then clear them
-    // (they are now part of the visual, not separate)
-    // For now: clear annotations since they'd be at wrong coords
-    // User should annotate AFTER rotating
-    if(S.annos[S.activeIdx]&&S.annos[S.activeIdx][S.page]&&S.annos[S.activeIdx][S.page].length>0){
-      toast('Roterer — annoteringer på siden nulstilles', true);
+    // 2. Baked annotations are already in buf - just clear them from S.annos
+    // so they don't get double-baked at wrong rotation
+    if(S.annos[S.activeIdx]&&S.annos[S.activeIdx][S.page]){
       S.annos[S.activeIdx][S.page]=[];
     }
     
