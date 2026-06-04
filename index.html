@@ -2238,6 +2238,10 @@ async function rotateSingle(){
     const pdfPage=doc.getPage(S.page-1);
     const cur=pdfPage.getRotation().angle||0;
     const newRot=(cur+90)%360;
+    console.log('Setting rotation from',cur,'to',newRot);
+    // Set rotation directly in the page dict to ensure it's written
+    pdfPage.node.set(PDFLib.PDFName.of('Rotate'), PDFLib.PDFNumber.of(newRot));
+    // Also use the API method
     pdfPage.setRotation(PDFLib.degrees(newRot));
     
     // 2. Also bake any existing annotations for this page then clear them
