@@ -4321,7 +4321,9 @@ async function bakePageNow(fileIdx, pageNum) {
       if (a._tePreview || a._baked) continue;
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
-      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: 0});
+      const annoRot = a._rot || 0;
+      console.log('baking anno:', a.type, 'rot:', annoRot, 'x:', Math.round(a.x), 'y:', Math.round(a.y));
+      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
       const d = annoDpr;
       const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x/d, a.y/d);
       const [pdfX1, pdfY1] = vp2.convertToPdfPoint((a.x+(a.w||0))/d, (a.y+(a.h||0))/d);
