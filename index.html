@@ -49,28 +49,44 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:'Segoe UI
 .mode-btn{padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd2);background:transparent;color:var(--t2);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
 .mode-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
 .mode-btn:hover:not(.active){background:var(--sf2);color:var(--t1)}
-#workspace{display:flex;flex:1;overflow:hidden}
+#workspace{display:flex;flex:1;overflow:hidden;flex-direction:row}
 
-/* ── MENUBAR ── */
-#menubar{height:40px;flex-shrink:0;background:var(--sf2);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;padding:0 8px;overflow:visible;position:relative;z-index:150}
-.mb-left{display:flex;align-items:center;gap:1px}
-.mb-right{display:flex;align-items:center;gap:5px;flex-shrink:0}
-.mb-group{position:relative}
-.mb-btn{height:28px;padding:0 10px;background:transparent;border:none;color:var(--t2);font-size:12px;font-weight:600;cursor:pointer;border-radius:4px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;transition:all .12s}
-.mb-btn:hover,.mb-btn.mopen{background:rgba(59,130,246,.15);color:var(--t1)}
-.mb-menu{position:fixed;z-index:9999;background:var(--sf);border:1px solid var(--bd2);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.7);min-width:240px;max-height:75vh;overflow-y:auto;display:none;flex-direction:column;padding:4px 0}
-.mb-menu.mopen{display:flex}
-.mb-item{padding:7px 16px;font-size:12px;color:var(--t2);cursor:pointer;display:flex;align-items:center;gap:9px;white-space:nowrap;transition:all .1s}
-.mb-item:hover{background:rgba(59,130,246,.12);color:var(--t1)}
-.mb-sep{height:1px;background:var(--bd);margin:4px 0}
-.mb-section{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding:6px 16px 2px}
-.mb-vsep{width:1px;height:20px;background:var(--bd);margin:0 3px;flex-shrink:0}
-#mb-tool-lbl{font-size:11px;color:var(--acc);font-weight:700;white-space:nowrap;padding:0 4px}
-#menubar .color-pick{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex-shrink:0;display:inline-block;transition:border-color .12s}
-#menubar .color-pick.sel{border-color:#fff}
-input[type=range]{-webkit-appearance:none;height:4px;background:var(--bd2);border-radius:2px;outline:none;cursor:pointer}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--acc)}
-
+/* ── ANNOTATION TOOLBAR (vertical, notepdf style) ── */
+#anno-toolbar{
+  width:44px;flex-shrink:0;background:var(--sf1);border-right:1px solid var(--bd);
+  display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:2px;
+  overflow-y:auto;overflow-x:hidden;z-index:10;
+}
+#anno-toolbar::-webkit-scrollbar{width:3px}
+#anno-toolbar::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px}
+.at-group{display:flex;flex-direction:column;align-items:center;gap:2px;width:100%}
+.at-sep{width:28px;height:1px;background:var(--bd);margin:3px 0;flex-shrink:0}
+.at-btn{
+  width:34px;height:34px;border-radius:8px;border:none;cursor:pointer;
+  background:transparent;color:var(--t2);display:flex;align-items:center;
+  justify-content:center;transition:background .15s,color .15s;flex-shrink:0;
+  position:relative;
+}
+.at-btn:hover{background:var(--sf2);color:var(--t1)}
+.at-btn.active{background:#e85d2f;color:#fff}
+.at-btn svg{width:18px;height:18px;pointer-events:none}
+.at-colors{gap:4px;padding:2px 0}
+.at-color{
+  width:20px;height:20px;border-radius:50%;cursor:pointer;flex-shrink:0;
+  transition:transform .12s,box-shadow .12s;
+}
+.at-color:hover{transform:scale(1.2)}
+.at-color.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #e85d2f}
+.at-sliders{gap:5px;padding:2px 4px;width:calc(100% - 8px)}
+.at-slider-row{display:flex;align-items:center;gap:3px;width:100%}
+.at-slider-row input[type=range]{flex:1;height:3px;accent-color:#e85d2f;min-width:0}
+.at-slider-row select{
+  flex:1;background:var(--sf2);border:1px solid var(--bd);color:var(--t1);
+  border-radius:4px;font-size:10px;padding:1px 2px;outline:none;min-width:0;
+}
+.at-slider-row svg{flex-shrink:0;color:var(--t3)}
+/* hide old menubar completely */
+#menubar{display:none!important}
 /* ── FILE PANEL ── */
 #file-panel{width:260px;flex-shrink:0;background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden;transition:width .2s}
 #file-panel.collapsed{width:0}
@@ -428,6 +444,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 #cv-container.drag-over{background:rgba(59,130,246,.08);outline:3px dashed var(--acc);}
 #cv-container.drag-over #drop-hint{color:var(--acc);font-size:14px;}
+
+#at-colorstrip .at-color{width:18px;height:18px}
+#anno-toolbar .mb-menu{position:fixed;left:44px;top:auto;z-index:200}
+#menubar{display:none!important}
 </style>
 </head>
 <body>
@@ -581,113 +601,122 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   <button class="btn bSuc bSm" id="tb-save" disabled onclick="smartDownload()">⬇ Download</button>
 </div>
 
-<!-- MENUBAR -->
-<div id="menubar">
-  <div class="mb-left">
-    <!-- Annotér -->
-    <div class="mb-group">
-      <button class="mb-btn" onclick="toggleMenu('m-anno')">✏ Annotér ▾</button>
-      <div class="mb-menu" id="m-anno">
-        <div class="mb-item" onclick="setTool('select');closeMenus()"><span>↖</span> Vælg / Flyt / Størrelse</div>
-        <div class="mb-sep"></div>
-        <div class="mb-section">Tegneværktøjer</div>
-        <div class="mb-item" onclick="setTool('highlight');closeMenus()"><span>▮</span> Fremhævning</div>
-        <div class="mb-item" onclick="setTool('redact');closeMenus()"><span>█</span> Overstrekning</div>
-        <div class="mb-item" onclick="setTool('pen');closeMenus()"><span>✏</span> Frihånd</div>
-        <div class="mb-item" onclick="setTool('text');closeMenus()"><span>T</span> Tekstboks</div>
-        <div class="mb-sep"></div>
-        <div class="mb-section">Former</div>
-        <div class="mb-item" onclick="setTool('rect');closeMenus()"><span>□</span> Kasse</div>
-        <div class="mb-item" onclick="setTool('circle');closeMenus()"><span>○</span> Cirkel</div>
-        <div class="mb-item" onclick="setTool('line');closeMenus()"><span>╱</span> Linje</div>
-        <div class="mb-item" onclick="setTool('arrow');closeMenus()"><span>→</span> Pil</div>
-        <div class="mb-sep"></div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="toggleTextEdit();closeMenus()"><span>✎</span> Rediger tekst</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="undoAnno();closeMenus()">↩ Fortryd</div>
-        <div class="mb-item" onclick="clearPageAnnos();closeMenus()">🗑 Ryd side</div>
-      </div>
-    </div>
-    <!-- Sider -->
-    <div class="mb-group">
-      <button class="mb-btn" onclick="toggleMenu('m-pages')">📄 Sider ▾</button>
-      <div class="mb-menu" id="m-pages">
-        <div class="mb-item" onclick="rotateSingle();closeMenus()">↻ Roter 90°</div>
-        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter via OCR</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
-        <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
-        <div class="mb-item" onclick="openM('m-split');closeMenus()">✂ Split PDF…</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="togglePageMgr();closeMenus()">⊞ Sidepanel</div>
-        <div class="mb-item" onclick="toggleCompare();closeMenus()">⊟⊞ Sammenlign</div>
-      </div>
-    </div>
-    <!-- Indsæt -->
-    <div class="mb-group">
-      <button class="mb-btn" onclick="toggleMenu('m-insert')">➕ Indsæt ▾</button>
-      <div class="mb-menu" id="m-insert">
-        <div class="mb-item" onclick="triggerImgInsert();closeMenus()">🖼 Billede på siden…</div>
-        <div class="mb-item" onclick="setTool('text');closeMenus()">T Tekstboks</div>
-        <div class="mb-item" onclick="openSignaturePanel();closeMenus()">✍ Signatur…</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="copyPageText();closeMenus()">📋 Kopiér al tekst</div>
-      </div>
-    </div>
-    <!-- OCR -->
-    <div class="mb-group">
-      <button class="mb-btn" onclick="toggleMenu('m-ocr-dd')">🔍 OCR ▾</button>
-      <div class="mb-menu" id="m-ocr-dd">
-        <div class="mb-item" onclick="runOCR();closeMenus()">🔍 OCR denne side → Tekst</div>
-        <div class="mb-item" onclick="switchRT('anno');closeMenus()">🔍 OCR Markering (søg)</div>
-        <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Markering — Bulk…</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side</div>
-        <div class="mb-item" onclick="autoRotateAll();closeMenus()">↻ Auto-Roter alle markerede</div>
-      </div>
-    </div>
-    <!-- Dokument -->
-    <div class="mb-group">
-      <button class="mb-btn" onclick="toggleMenu('m-doc-dd')">📋 Dokument ▾</button>
-      <div class="mb-menu" id="m-doc-dd">
-        <div class="mb-item" onclick="compressPDF();closeMenus()">⊗ Komprimer PDF</div>
-        <div class="mb-item" onclick="openM('m-wm');closeMenus()">💧 Vandmærke/Stempel…</div>
-        <div class="mb-item" onclick="openM('m-pagenum');closeMenus()">＃ Tilføj sidetal…</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="openM('m-convert');closeMenus()">🔄 Konverter PDF…</div>
-        <div class="mb-sep"></div>
-        <div class="mb-item" onclick="showAISetup();closeMenus()">🤖 Installer AI…</div>
-        <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
-        <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
-        <div class="mb-sep"></div>
-      </div>
-    </div>
-  </div>
-  <!-- Right: colors + sliders -->
-  <div class="mb-right">
-    <span id="mb-tool-lbl">↖ Vælg</span>
-    <div class="mb-vsep"></div>
-    <div class="color-pick sel" style="background:#eab308" onclick="setColor('#eab308',this)"></div>
-    <div class="color-pick" style="background:#22c55e" onclick="setColor('#22c55e',this)"></div>
-    <div class="color-pick" style="background:#3b82f6" onclick="setColor('#3b82f6',this)"></div>
-    <div class="color-pick" style="background:#ef4444" onclick="setColor('#ef4444',this)"></div>
-    <div class="color-pick" style="background:#a855f7" onclick="setColor('#a855f7',this)"></div>
-    <div class="color-pick" style="background:#000000" onclick="setColor('#000000',this)"></div>
-    <div class="color-pick" style="background:#ffffff;border:2px solid var(--bd2)" onclick="setColor('#ffffff',this)"></div>
-    <div class="mb-vsep"></div>
-    <span style="font-size:10px;color:var(--t3)">Str</span>
-    <input type="range" id="stroke-sz" min="1" max="20" value="3" style="width:50px"/>
-    <span style="font-size:10px;color:var(--t3)">Op</span>
-    <input type="range" id="op-sl" min="10" max="100" value="70" style="width:45px"/>
-    <select id="fnt-sz" style="background:var(--sf2);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:1px 3px;outline:none;height:22px">
-      <option>10</option><option>12</option><option selected>14</option><option>16</option><option>18</option><option>24</option><option>32</option><option>48</option>
-    </select>
-  </div>
-</div>
 
 <!-- WORKSPACE -->
 <div id="workspace">
+<!-- ANNOTATION TOOLBAR (notepdf style) -->
+<div id="anno-toolbar">
+  <!-- Tool group -->
+  <div class="at-group">
+    <button class="at-btn" id="at-select"    onclick="setTool('select')"    title="Vælg / Flyt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l7 18 3-7 7-3z"/></svg>
+    </button>
+  </div>
+  <div class="at-sep"></div>
+  <div class="at-group">
+    <button class="at-btn" id="at-highlight" onclick="setTool('highlight')" title="Fremhævning">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="9" width="18" height="7" rx="2"/><line x1="7" y1="19" x2="17" y2="19"/></svg>
+    </button>
+    <button class="at-btn" id="at-redact"    onclick="setTool('redact')"    title="Overstrekning">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="2"/><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3 2"/></svg>
+    </button>
+    <button class="at-btn" id="at-pen"       onclick="setTool('pen')"       title="Frihånd">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 3l4 4-12 12H5v-4z"/><line x1="15" y1="5" x2="19" y2="9"/></svg>
+    </button>
+    <button class="at-btn" id="at-text"      onclick="setTool('text')"      title="Tekstboks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="13" y2="14"/></svg>
+    </button>
+  </div>
+  <div class="at-sep"></div>
+  <div class="at-group">
+    <button class="at-btn" id="at-rect"      onclick="setTool('rect')"      title="Kasse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12" rx="2"/></svg>
+    </button>
+    <button class="at-btn" id="at-circle"    onclick="setTool('circle')"    title="Cirkel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/></svg>
+    </button>
+    <button class="at-btn" id="at-line"      onclick="setTool('line')"      title="Linje">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+    </button>
+    <button class="at-btn" id="at-arrow"     onclick="setTool('arrow')"     title="Pil">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/></svg>
+    </button>
+  </div>
+  <div class="at-sep"></div>
+  <div class="at-group">
+    <button class="at-btn" id="at-te"        onclick="toggleTextEdit()"     title="Rediger tekst">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4z"/></svg>
+    </button>
+  </div>
+  <div class="at-sep"></div>
+  <!-- Colors -->
+  <div class="at-group at-colors" id="at-colorstrip">
+    <div class="at-color sel" style="background:#eab308" onclick="setColor('#eab308',this)" title="Gul"></div>
+    <div class="at-color"     style="background:#22c55e" onclick="setColor('#22c55e',this)" title="Grøn"></div>
+    <div class="at-color"     style="background:#3b82f6" onclick="setColor('#3b82f6',this)" title="Blå"></div>
+    <div class="at-color"     style="background:#ef4444" onclick="setColor('#ef4444',this)" title="Rød"></div>
+    <div class="at-color"     style="background:#a855f7" onclick="setColor('#a855f7',this)" title="Lilla"></div>
+    <div class="at-color"     style="background:#000000" onclick="setColor('#000000',this)" title="Sort"></div>
+    <div class="at-color"     style="background:#ffffff;outline:1px solid #888" onclick="setColor('#ffffff',this)" title="Hvid"></div>
+  </div>
+  <div class="at-sep"></div>
+  <!-- Sliders -->
+  <div class="at-group at-sliders">
+    <div class="at-slider-row">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/></svg>
+      <input type="range" id="stroke-sz" min="1" max="20" value="3" title="Stregtykkelse"/>
+    </div>
+    <div class="at-slider-row">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="12" height="4" rx="1" opacity=".5"/></svg>
+      <input type="range" id="op-sl" min="10" max="100" value="70" title="Gennemsigtighed"/>
+    </div>
+    <div class="at-slider-row">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><text x="1" y="13" font-size="11" fill="currentColor" stroke="none">A</text></svg>
+      <select id="fnt-sz" title="Skriftstørrelse">
+        <option>10</option><option>12</option><option selected>14</option><option>16</option><option>18</option><option>24</option><option>32</option><option>48</option>
+      </select>
+    </div>
+  </div>
+  <div class="at-sep"></div>
+  <!-- Actions -->
+  <div class="at-group">
+    <button class="at-btn" onclick="undoAnno()"      title="Fortryd">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14H4V9"/><path d="M4 14a9 9 0 109-9"/></svg>
+    </button>
+    <button class="at-btn" onclick="rotateSingle()"  title="Roter 90°">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 2v6h-6"/><path d="M21 8A9 9 0 113 12"/></svg>
+    </button>
+  </div>
+  <!-- Overflow menu for less-used features -->
+  <div class="at-group" style="margin-top:auto">
+    <button class="at-btn" onclick="toggleMenu('m-pages-at')" title="Sider…">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="10" height="14" rx="1"/><rect x="10" y="7" width="10" height="14" rx="1"/></svg>
+    </button>
+    <div class="mb-menu" id="m-pages-at" style="left:44px;bottom:0;top:auto">
+      <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
+      <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
+      <div class="mb-item" onclick="openM('m-split');closeMenus()">✂ Split PDF…</div>
+      <div class="mb-sep"></div>
+      <div class="mb-item" onclick="togglePageMgr();closeMenus()">⊞ Sidepanel</div>
+      <div class="mb-item" onclick="toggleCompare();closeMenus()">⊟⊞ Sammenlign</div>
+      <div class="mb-sep"></div>
+      <div class="mb-item" onclick="compressPDF();closeMenus()">⊗ Komprimer PDF</div>
+      <div class="mb-item" onclick="openM('m-wm');closeMenus()">💧 Vandmærke…</div>
+      <div class="mb-item" onclick="openM('m-pagenum');closeMenus()">＃ Sidetal…</div>
+      <div class="mb-item" onclick="openM('m-convert');closeMenus()">🔄 Konverter…</div>
+      <div class="mb-sep"></div>
+      <div class="mb-item" onclick="runOCR();closeMenus()">🔍 OCR denne side</div>
+      <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter</div>
+      <div class="mb-item" onclick="triggerImgInsert();closeMenus()">🖼 Indsæt billede</div>
+      <div class="mb-item" onclick="openSignaturePanel();closeMenus()">✍ Signatur…</div>
+      <div class="mb-item" onclick="copyPageText();closeMenus()">📋 Kopiér tekst</div>
+      <div class="mb-sep"></div>
+      <div class="mb-item" onclick="showAISetup();closeMenus()">🤖 Installer AI…</div>
+      <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
+      <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
+    </div>
+  </div>
+</div>
 
 <!-- PREVIEW MODE -->
 <div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
@@ -1537,6 +1566,9 @@ function setTool(t){
   if(t==='redact'||t==='highlight')switchRT('anno');
   const names={select:'↖ Vælg',highlight:'▮ Fremhæv',redact:'█ Overstreg',pen:'✏ Pen',text:'T Tekst',rect:'□ Kasse',circle:'○ Cirkel',line:'╱ Linje',arrow:'→ Pil'};
   const ind=document.getElementById('mb-tool-lbl');if(ind)ind.textContent=names[t]||t;
+  // Update vertical toolbar active buttons
+  document.querySelectorAll('.at-btn').forEach(b=>b.classList.remove('active'));
+  const atb=document.getElementById('at-'+t);if(atb)atb.classList.add('active');
 }
 function setColor(c,el){S.color=c;document.querySelectorAll('#menubar .color-pick').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
 function setRedactColor(c,el){S.redactColor=c;document.querySelectorAll('.redact-cp').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
@@ -1566,6 +1598,10 @@ function endDraw(e){
   annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:S.rotation});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
   bakePageNow(S.activeIdx,S.page); // bake immediately
+  // Auto-switch to select after drawing a shape
+  if(['rect','circle','line','arrow'].includes(S.tool)){
+    setTool('select');
+  }
 }
 async function resolveAnnoCoords(anno,fileIdx,pageNum){
   if(!anno._needsCoordConvert)return;
@@ -4386,14 +4422,14 @@ async function bakePageNow(fileIdx, pageNum) {
             page.drawEllipse({x:pdfX+pdfW/2,y:pdfY+pdfH/2,xScale:pdfW/2,yScale:pdfH/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:1,opacity:a.opacity||1,color:undefined});
             break;
           case 'line':{
-            const lx1=(a.x1/scale)*pW, ly1=pH-(a.y1/scale)*pH;
-            const lx2=(a.x2/scale)*pW, ly2=pH-(a.y2/scale)*pH;
-            page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:Math.max(1,a.strokeSize/scale*pW/page.getWidth()),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            const lx1=a.x1/s, ly1=pH-a.y1/s;
+            const lx2=a.x2/s, ly2=pH-a.y2/s;
+            page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:Math.max(1,a.strokeSize/s),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
             break;}
           case 'arrow':{
-            const ax1=(a.x1/scale)*pW, ay1=pH-(a.y1/scale)*pH;
-            const ax2=(a.x2/scale)*pW, ay2=pH-(a.y2/scale)*pH;
-            const th=Math.max(1,a.strokeSize/scale*pW/page.getWidth());
+            const ax1=a.x1/s, ay1=pH-a.y1/s;
+            const ax2=a.x2/s, ay2=pH-a.y2/s;
+            const th=Math.max(1,a.strokeSize/s);
             page.drawLine({start:{x:ax1,y:ay1},end:{x:ax2,y:ay2},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
             const ang=Math.atan2(ay2-ay1,ax2-ax1);
             const hs=Math.max(th*4,8);
@@ -4403,9 +4439,9 @@ async function bakePageNow(fileIdx, pageNum) {
           case 'pen':
             if(a.points&&a.points.length>1){
               for(let i=1;i<a.points.length;i++){
-                const px1=(a.points[i-1].x/scale)*pW, py1=pH-(a.points[i-1].y/scale)*pH;
-                const px2=(a.points[i].x/scale)*pW, py2=pH-(a.points[i].y/scale)*pH;
-                page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:Math.max(1,a.strokeSize/scale),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+                const px1=a.points[i-1].x/s, py1=pH-a.points[i-1].y/s;
+                const px2=a.points[i].x/s, py2=pH-a.points[i].y/s;
+                page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:Math.max(1,a.strokeSize/s),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
               }
             }
             break;
