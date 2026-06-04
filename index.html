@@ -4333,35 +4333,38 @@ async function bakePageNow(fileIdx, pageNum) {
 
         let pdfX, pdfY, pdfW, pdfH;
 
+        // scale = zoom * dpr
+        // pdf.js renders 1 PDF point = zoom CSS pixels at dpr=1
+        // canvas pixels = CSS pixels * dpr
+        // so: PDF points = canvas pixels / (zoom * dpr)
+        const s = scale; // zoom * dpr
+
         if (rot === 0 || rot === 360) {
-          pdfX = (a.x / scale) * pW;
-          pdfY = pH - ((a.y + (a.h||0)) / scale) * pH;
-          pdfW = ((a.w||0) / scale) * pW;
-          pdfH = ((a.h||0) / scale) * pH;
+          pdfX = a.x / s;
+          pdfY = pH - (a.y + (a.h||0)) / s;
+          pdfW = (a.w||0) / s;
+          pdfH = (a.h||0) / s;
         } else if (rot === 90) {
-          // 90° CW: canvas W=pH*scale, canvas H=pW*scale
-          const canvW = pH * scale, canvH = pW * scale;
-          pdfX = (a.y / canvH) * pW;
-          pdfY = (a.x / canvW) * pH;
-          pdfW = ((a.h||0) / canvH) * pW;
-          pdfH = ((a.w||0) / canvW) * pH;
+          // At rot=90: canvas width = pH*s, canvas height = pW*s
+          pdfX = a.y / s;
+          pdfY = a.x / s;
+          pdfW = (a.h||0) / s;
+          pdfH = (a.w||0) / s;
         } else if (rot === 180) {
-          pdfX = pW - ((a.x + (a.w||0)) / scale) * pW;
-          pdfY = ((a.y) / scale) * pH;
-          pdfW = ((a.w||0) / scale) * pW;
-          pdfH = ((a.h||0) / scale) * pH;
+          pdfX = pW - (a.x + (a.w||0)) / s;
+          pdfY = (a.y) / s;
+          pdfW = (a.w||0) / s;
+          pdfH = (a.h||0) / s;
         } else if (rot === 270) {
-          const canvW = pH * scale, canvH = pW * scale;
-          pdfX = pH - ((a.y + (a.h||0)) / canvH) * pH;
-          pdfY = pW - ((a.x + (a.w||0)) / canvW) * pW;
-          pdfW = ((a.h||0) / canvH) * pH;
-          pdfH = ((a.w||0) / canvW) * pW;
+          pdfX = pH - (a.y + (a.h||0)) / s;
+          pdfY = pW - (a.x + (a.w||0)) / s;
+          pdfW = (a.h||0) / s;
+          pdfH = (a.w||0) / s;
         } else {
-          // fallback
-          pdfX = (a.x / scale) * pW;
-          pdfY = pH - ((a.y + (a.h||0)) / scale) * pH;
-          pdfW = ((a.w||0) / scale) * pW;
-          pdfH = ((a.h||0) / scale) * pH;
+          pdfX = a.x / s;
+          pdfY = pH - (a.y + (a.h||0)) / s;
+          pdfW = (a.w||0) / s;
+          pdfH = (a.h||0) / s;
         }
 
         console.log('bake:', a.type, 'rot:', rot, 'pdf coords:', Math.round(pdfX), Math.round(pdfY), Math.round(pdfW), Math.round(pdfH), '/', Math.round(pW), Math.round(pH));
