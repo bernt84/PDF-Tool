@@ -4306,8 +4306,9 @@ function checkMuPDFStatus() {
 // Bake current page annotations into PDF buffer immediately
 async function bakePageNow(fileIdx, pageNum) {
   const f = S.files[fileIdx];
-  if (!f || !f.buf) return;
+  if (!f || !f.buf) { console.log('bakePageNow: no file/buf'); return; }
   const annos = getAnnos(fileIdx, pageNum);
+  console.log('bakePageNow called, annos:', annos.length, 'unbaked:', annos.filter(a=>!a._baked&&!a._tePreview).length);
   if (!annos.length) return;
   try {
     const doc = await PDFLib.PDFDocument.load(f.buf.slice(0));
