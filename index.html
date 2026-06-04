@@ -693,7 +693,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
   <div id="file-panel">
     <div id="fp-top">
-      <input id="fsrch" type="search" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off" name="no-autofill" onfocus="this.removeAttribute('readonly')" readonly/>
+      <input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="new-password" name="fsrch-field"/>
       <button class="btn bGh bSm" onclick="selAll()">☑</button>
       <button class="btn bGh bSm" onclick="selNone()">☐</button>
     </div>
@@ -2246,11 +2246,8 @@ async function rotateSingle(){
     // Also use the API method
     pdfPage.setRotation(PDFLib.degrees(newRot));
     
-    // 2. Baked annotations are already in buf - just clear them from S.annos
-    // so they don't get double-baked at wrong rotation
-    if(S.annos[S.activeIdx]&&S.annos[S.activeIdx][S.page]){
-      S.annos[S.activeIdx][S.page]=[];
-    }
+    // 2. Keep annotations on canvas - they're already baked in buf (_baked=true)
+    // Don't clear - they remain visible after rotation
     
     const rotSaved = await doc.save();
     f.buf = rotSaved.buffer ? rotSaved.buffer.slice(rotSaved.byteOffset, rotSaved.byteOffset + rotSaved.byteLength) : rotSaved.slice(0);
