@@ -693,7 +693,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
   <div id="file-panel">
     <div id="fp-top">
-      <input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off" name="filesearch"/>
+      <input id="fsrch" type="search" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off" name="no-autofill" onfocus="this.removeAttribute('readonly')" readonly/>
       <button class="btn bGh bSm" onclick="selAll()">☑</button>
       <button class="btn bGh bSm" onclick="selNone()">☐</button>
     </div>
@@ -4303,96 +4303,131 @@ function checkMuPDFStatus() {
 // Bake current page annotations into PDF buffer immediately
 async function bakePageNow(fileIdx, pageNum) {
   const f = S.files[fileIdx];
-  if (!f || !f.buf) { console.log('bakePageNow: no file/buf'); return; }
+  if (!f || !f.buf) return;
   const annos = getAnnos(fileIdx, pageNum);
-  console.log('bakePageNow called, annos:', annos.length, 'unbaked:', annos.filter(a=>!a._baked&&!a._tePreview).length);
-  if (!annos.length) return;
+  const unbaked = annos.filter(a => !a._baked && !a._tePreview);
+  if (!unbaked.length) return;
   try {
-    const bufCopy = f.buf instanceof ArrayBuffer ? f.buf.slice(0) : f.buf.buffer.slice(f.buf.byteOffset, f.buf.byteOffset + f.buf.byteLength);
-    const doc = await PDFLib.PDFDocument.load(bufCopy);
+    const bufSrc = f.buf instanceof Uint8Array ? f.buf.buffer.slice(f.buf.byteOffset, f.buf.byteOffset+f.buf.byteLength) : f.buf.slice(0);
+    const doc = await PDFLib.PDFDocument.load(bufSrc);
     const page = doc.getPage(pageNum - 1);
     const {width: pW, height: pH} = page.getSize();
-    const pdfPage = await f.pdfJsDoc.getPage(pageNum);
-    const dpr = window.devicePixelRatio;
-    const vp = pdfPage.getViewport({scale: S.zoom * dpr, rotation: 0});
     const font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
 
-    for (const a of annos) {
-      if (a._tePreview || a._baked) continue;
-      const annoZoom = a._zoom || S.zoom;
-      const annoDpr = a._dpr || dpr;
-      const annoRot = a._rot || 0;
-      console.log('baking anno:', a.type, 'rot:', annoRot, 'x:', Math.round(a.x), 'y:', Math.round(a.y));
-      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
-      const d = annoDpr;
-      const [pdfX0, pdfY0] = vp2.convertToPdfPoint(a.x/d, a.y/d);
-      const [pdfX1, pdfY1] = vp2.convertToPdfPoint((a.x+(a.w||0))/d, (a.y+(a.h||0))/d);
-      const px = Math.min(pdfX0, pdfX1);
-      const py = Math.min(pdfY0, pdfY1);
-      const pw = Math.abs(pdfX1-pdfX0);
-      const ph_ = Math.abs(pdfY1-pdfY0);
-      const scX = pW / vp2.width, scY = pH / vp2.height;
-      const col = a.color||'#000000';
-      const hex = col.replace('#','');
-      const r=parseInt(hex.substring(0,2),16)/255||0;
-      const g=parseInt(hex.substring(2,4),16)/255||0;
-      const b=parseInt(hex.substring(4,6),16)/255||0;
+    for (const a of unbaked) {
+      try {
+        const zoom = a._zoom || S.zoom;
+        const dpr = a._dpr || window.devicePixelRatio;
+        const rot = a._rot || 0; // S.rotation at draw time
+        const scale = zoom * dpr;
 
-      switch(a.type) {
-        case 'highlight':
-          page.drawRectangle({x:px,y:py,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:(a.opacity||0.4)*0.5,borderWidth:0});
-          break;
-        case 'redact':
-          page.drawRectangle({x:px,y:py,width:pw,height:ph_,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1,borderWidth:0});
-          break;
-        case 'rect':
-          page.drawRectangle({x:px,y:py,width:pw,height:ph_,borderColor:PDFLib.rgb(r,g,b),borderWidth:Math.max(1,a.strokeSize*scX),opacity:a.opacity||1,color:undefined});
-          break;
-        case 'circle':
-          page.drawEllipse({x:px+pw/2,y:py+ph_/2,xScale:pw/2,yScale:ph_/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:Math.max(1,a.strokeSize*scX),opacity:a.opacity||1,color:undefined});
-          break;
-        case 'line': {
-          const [lx1,ly1]=vp2.convertToPdfPoint(a.x1/d,a.y1/d);
-          const [lx2,ly2]=vp2.convertToPdfPoint(a.x2/d,a.y2/d);
-          page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:Math.max(1,a.strokeSize*scX),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
-          break;
+        // Manual coordinate conversion:
+        // Canvas coords (canvas pixels) -> CSS pixels -> PDF points
+        // CSS pixels = canvas / dpr
+        // For unrotated: pdfX = cssX / zoom * (pW/cssPageW) ... simplified:
+        // pdfX = (cssX / zoom) / (cssPageW / pW) but cssPageW = pW*zoom so:
+        // pdfX = cssX / dpr / zoom * (pW / (pW*zoom)) ... 
+        // Actually: at scale=zoom*dpr, canvas width = pW*zoom*dpr
+        // So: pdfX = canvasX / scale * pW  (for rot=0)
+        // pdfY = pH - canvasY / scale * pH (PDF Y is from bottom)
+
+        let pdfX, pdfY, pdfW, pdfH;
+
+        if (rot === 0 || rot === 360) {
+          pdfX = (a.x / scale) * pW;
+          pdfY = pH - ((a.y + (a.h||0)) / scale) * pH;
+          pdfW = ((a.w||0) / scale) * pW;
+          pdfH = ((a.h||0) / scale) * pH;
+        } else if (rot === 90) {
+          // 90° CW: canvas W=pH*scale, canvas H=pW*scale
+          const canvW = pH * scale, canvH = pW * scale;
+          pdfX = (a.y / canvH) * pW;
+          pdfY = (a.x / canvW) * pH;
+          pdfW = ((a.h||0) / canvH) * pW;
+          pdfH = ((a.w||0) / canvW) * pH;
+        } else if (rot === 180) {
+          pdfX = pW - ((a.x + (a.w||0)) / scale) * pW;
+          pdfY = ((a.y) / scale) * pH;
+          pdfW = ((a.w||0) / scale) * pW;
+          pdfH = ((a.h||0) / scale) * pH;
+        } else if (rot === 270) {
+          const canvW = pH * scale, canvH = pW * scale;
+          pdfX = pH - ((a.y + (a.h||0)) / canvH) * pH;
+          pdfY = pW - ((a.x + (a.w||0)) / canvW) * pW;
+          pdfW = ((a.h||0) / canvH) * pH;
+          pdfH = ((a.w||0) / canvW) * pW;
+        } else {
+          // fallback
+          pdfX = (a.x / scale) * pW;
+          pdfY = pH - ((a.y + (a.h||0)) / scale) * pH;
+          pdfW = ((a.w||0) / scale) * pW;
+          pdfH = ((a.h||0) / scale) * pH;
         }
-        case 'arrow': {
-          const [ax1,ay1]=vp2.convertToPdfPoint(a.x1/d,a.y1/d);
-          const [ax2,ay2]=vp2.convertToPdfPoint(a.x2/d,a.y2/d);
-          const th=Math.max(1,a.strokeSize*scX);
-          page.drawLine({start:{x:ax1,y:ay1},end:{x:ax2,y:ay2},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
-          const ang=Math.atan2(ay2-ay1,ax2-ax1);
-          const hs=Math.max(th*4,8);
-          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang+Math.PI*0.8)*hs,y:ay2+Math.sin(ang+Math.PI*0.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
-          page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang-Math.PI*0.8)*hs,y:ay2+Math.sin(ang-Math.PI*0.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
-          break;
-        }
-        case 'pen':
-          if(a.points&&a.points.length>1){
-            for(let i=1;i<a.points.length;i++){
-              const[px1,py1]=vp2.convertToPdfPoint(a.points[i-1].x/d,a.points[i-1].y/d);
-              const[px2,py2]=vp2.convertToPdfPoint(a.points[i].x/d,a.points[i].y/d);
-              page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:Math.max(1,a.strokeSize*scX),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+
+        console.log('bake:', a.type, 'rot:', rot, 'pdf coords:', Math.round(pdfX), Math.round(pdfY), Math.round(pdfW), Math.round(pdfH), '/', Math.round(pW), Math.round(pH));
+
+        const col = a.color||'#ffff00';
+        const hex = col.replace('#','');
+        const r=parseInt(hex.substring(0,2),16)/255||0;
+        const g=parseInt(hex.substring(2,4),16)/255||0;
+        const b=parseInt(hex.substring(4,6),16)/255||0;
+        const scX = pW / (pW * zoom), scY = pH / (pH * zoom);
+
+        switch(a.type) {
+          case 'highlight':
+            page.drawRectangle({x:pdfX,y:pdfY,width:Math.max(pdfW,1),height:Math.max(pdfH,1),color:PDFLib.rgb(r,g,b),opacity:(a.opacity||0.4)*0.5,borderWidth:0});
+            break;
+          case 'redact':
+            page.drawRectangle({x:pdfX,y:pdfY,width:Math.max(pdfW,1),height:Math.max(pdfH,1),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1,borderWidth:0});
+            break;
+          case 'rect':
+            page.drawRectangle({x:pdfX,y:pdfY,width:Math.max(pdfW,1),height:Math.max(pdfH,1),borderColor:PDFLib.rgb(r,g,b),borderWidth:Math.max(1,a.strokeSize/(zoom*dpr)*pW/page.getWidth()),opacity:a.opacity||1,color:undefined});
+            break;
+          case 'circle':
+            page.drawEllipse({x:pdfX+pdfW/2,y:pdfY+pdfH/2,xScale:pdfW/2,yScale:pdfH/2,borderColor:PDFLib.rgb(r,g,b),borderWidth:1,opacity:a.opacity||1,color:undefined});
+            break;
+          case 'line':{
+            const lx1=(a.x1/scale)*pW, ly1=pH-(a.y1/scale)*pH;
+            const lx2=(a.x2/scale)*pW, ly2=pH-(a.y2/scale)*pH;
+            page.drawLine({start:{x:lx1,y:ly1},end:{x:lx2,y:ly2},thickness:Math.max(1,a.strokeSize/scale*pW/page.getWidth()),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            break;}
+          case 'arrow':{
+            const ax1=(a.x1/scale)*pW, ay1=pH-(a.y1/scale)*pH;
+            const ax2=(a.x2/scale)*pW, ay2=pH-(a.y2/scale)*pH;
+            const th=Math.max(1,a.strokeSize/scale*pW/page.getWidth());
+            page.drawLine({start:{x:ax1,y:ay1},end:{x:ax2,y:ay2},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            const ang=Math.atan2(ay2-ay1,ax2-ax1);
+            const hs=Math.max(th*4,8);
+            page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang+Math.PI*.8)*hs,y:ay2+Math.sin(ang+Math.PI*.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            page.drawLine({start:{x:ax2,y:ay2},end:{x:ax2+Math.cos(ang-Math.PI*.8)*hs,y:ay2+Math.sin(ang-Math.PI*.8)*hs},thickness:th,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+            break;}
+          case 'pen':
+            if(a.points&&a.points.length>1){
+              for(let i=1;i<a.points.length;i++){
+                const px1=(a.points[i-1].x/scale)*pW, py1=pH-(a.points[i-1].y/scale)*pH;
+                const px2=(a.points[i].x/scale)*pW, py2=pH-(a.points[i].y/scale)*pH;
+                page.drawLine({start:{x:px1,y:py1},end:{x:px2,y:py2},thickness:Math.max(1,a.strokeSize/scale),color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});
+              }
             }
-          }
-          break;
-        case 'text':
-          if(a.text){try{page.drawText(a.text,{x:px,y:py,size:Math.max(6,(a.fontSize||12)*scY*0.8),font,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});}catch(e){}}
-          break;
-      }
+            break;
+          case 'text':
+            if(a.text){try{page.drawText(a.text,{x:pdfX,y:pdfY,size:Math.max(6,(a.fontSize||12)/zoom),font,color:PDFLib.rgb(r,g,b),opacity:a.opacity||1});}catch(e){}}
+            break;
+        }
         a._baked = true;
-
+      } catch(annErr) { console.error('anno bake error:', annErr.message, a.type); }
     }
 
     const saved = await doc.save();
-    f.buf = saved.buffer ? saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength) : saved.slice(0);
-    // Clear baked annotations from memory (they're now in the PDF)
+    f.buf = saved instanceof Uint8Array
+      ? saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength)
+      : saved.slice(0);
+    // Remove baked annotations
     if(S.annos[fileIdx] && S.annos[fileIdx][pageNum]) {
       S.annos[fileIdx][pageNum] = S.annos[fileIdx][pageNum].filter(a => !a._baked);
     }
   } catch(e) {
-    console.error('bakePageNow error:', e.message, e);
+    console.error('bakePageNow error:', e.message);
   }
 }
 
