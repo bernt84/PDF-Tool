@@ -1563,8 +1563,7 @@ function endDraw(e){
   if(!S._drawing)return;S._drawing=false;const{x,y}=canvasCoords(e);
   const dx=Math.abs(x-S._startX),dy=Math.abs(y-S._startY);if(dx<3&&dy<3&&S.tool!=='pen')return;
   const annos=getAnnos(S.activeIdx,S.page);
-  const _pageRot=(S.files[S.activeIdx]&&S.files[S.activeIdx].pageRotations&&S.files[S.activeIdx].pageRotations[S.page])||0;
-  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:(S.rotation+_pageRot)%360});
+  annos.push({type:S.tool,x:Math.min(S._startX,x),y:Math.min(S._startY,y),w:Math.abs(x-S._startX),h:Math.abs(y-S._startY),x1:S._startX,y1:S._startY,x2:x,y2:y,points:[...S._currentPoints],color:S.color,strokeSize:S.strokeSize*window.devicePixelRatio,opacity:S.opacity,fontSize:S.fontSize,_zoom:S.zoom,_dpr:window.devicePixelRatio,_rot:S.rotation});
   redrawAnnos();renderAnnoList();S._currentPoints=[];
   setTimeout(()=>bakePageNow(S.activeIdx,S.page),50);
 }
@@ -2675,8 +2674,9 @@ async function bakeAnnotations(doc,fileIdx){
       if(a._tePreview) continue;
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
-      // PDF rotation is baked in - always use 0 for annotation coords
-      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: 0});
+      // Use the rotation stored at draw time
+      const annoRot = a._rot || 0;
+      const vp2 = pdfPage.getViewport({scale: annoZoom * annoDpr, rotation: annoRot});
       // convertToPdfPoint converts canvas coords -> PDF coords (handles rotation)
       // Canvas coords are in canvas pixels (zoom*dpr), convert to CSS pixels first
       const d = annoDpr;
