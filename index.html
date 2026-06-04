@@ -2270,12 +2270,9 @@ async function rotateSingle(){
     
     console.log('rotateSingle: done, new buf=', f.buf?.byteLength);
     renderFileList();
-    const savedZoom = S.zoom; // preserve zoom
     await renderPage();
-    if(Math.abs(S.zoom - savedZoom) > 0.01) {
-      S.zoom = savedZoom;
-      await renderPage();
-    }
+    zoomFit(); // fit rotated page to screen
+    await renderPage();
     toast('Side '+S.page+' roteret ✓','ok');
   } catch(e) {
     console.error('Rotate error:',e);
@@ -4311,7 +4308,8 @@ async function bakePageNow(fileIdx, pageNum) {
   console.log('bakePageNow called, annos:', annos.length, 'unbaked:', annos.filter(a=>!a._baked&&!a._tePreview).length);
   if (!annos.length) return;
   try {
-    const doc = await PDFLib.PDFDocument.load(f.buf.slice(0));
+    const bufCopy = f.buf instanceof ArrayBuffer ? f.buf.slice(0) : f.buf.buffer.slice(f.buf.byteOffset, f.buf.byteOffset + f.buf.byteLength);
+    const doc = await PDFLib.PDFDocument.load(bufCopy);
     const page = doc.getPage(pageNum - 1);
     const {width: pW, height: pH} = page.getSize();
     const pdfPage = await f.pdfJsDoc.getPage(pageNum);
@@ -4391,7 +4389,7 @@ async function bakePageNow(fileIdx, pageNum) {
       S.annos[fileIdx][pageNum] = S.annos[fileIdx][pageNum].filter(a => !a._baked);
     }
   } catch(e) {
-    console.error('bakePageNow error:', e);
+    console.error('bakePageNow error:', e.message, e);
   }
 }
 
