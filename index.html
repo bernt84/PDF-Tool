@@ -4911,7 +4911,7 @@ const LA = {
   FONTS: ['Helvetica','Times','Courier'],
   FONT_CSS: { Helvetica:'Helvetica, Arial, sans-serif', Times:'"Times New Roman", Times, serif', Courier:'"Courier New", Courier, monospace' },
   TOOLS: ['rect','circle','text','arrow','line','highlight'],
-  DEBUG: false,
+  DEBUG: true,
 };
 function laIsTool(t){ return LA.TOOLS.indexOf(t)>=0; }
 
@@ -4958,6 +4958,7 @@ async function laSyncLayerSize(){
   const av=document.getElementById('anno-canvas');
   const w=av?parseFloat(av.style.width):0, h=av?parseFloat(av.style.height):0;
   c.setDimensions({width:w,height:h});
+  if(LA.DEBUG) console.log('[LA size] fabric canvas set to',Math.round(w)+'x'+Math.round(h),'| anno-canvas CSS:',av?av.style.width:'?',av?av.style.height:'?','| vp size:',LA._vp?(Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height)):'(none)','| dpr:',window.devicePixelRatio);
   laApplyToolMode();
 }
 
@@ -4977,10 +4978,13 @@ function laApplyToolMode(){
 async function laRefreshViewport(){
   const f=S.files[S.activeIdx];
   if(!f||!f.pdfJsDoc){ LA._vp=null; return; }
-  if(LA._canvasVp){ try{ LA._vp=LA._canvasVp.clone({scale:S.zoom}); return; }catch(e){} }
+  if(LA._canvasVp){ try{ LA._vp=LA._canvasVp.clone({scale:S.zoom});
+    if(LA.DEBUG) console.log('[LA vp] via clone — rotation:',LA._vp.rotation,'scale:',LA._vp.scale,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height),'| S.rotation:',S.rotation,'zoom:',S.zoom);
+    return; }catch(e){ if(LA.DEBUG)console.warn('[LA vp] clone failed',e); } }
   const page=await f.pdfJsDoc.getPage(S.page);
   const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
   LA._vp=page.getViewport({scale:S.zoom, rotation:(S.rotation+pageRot)%360});
+  if(LA.DEBUG) console.log('[LA vp] via getViewport — rotation:',(S.rotation+pageRot)%360,'scale:',S.zoom,'pageRot:',pageRot,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height));
 }
 function laScreenToPdf(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToPdfPoint(x,y); return [p[0],p[1]]; }
 function laPdfToScreen(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToViewportPoint(x,y); return [p[0],p[1]]; }
@@ -5104,7 +5108,12 @@ function laMouseUp(){
   if(d.line){ tooSmall=Math.hypot(d.obj.x2-d.obj.x1,d.obj.y2-d.obj.y1)<5; }
   else { tooSmall=(d.obj.width||d.obj.rx*2)<4 && (d.obj.height||d.obj.ry*2)<4; }
   if(tooSmall){ c.remove(d.obj); }
-  else { c.setActiveObject(d.obj); laPersist(); }
+  else { c.setActiveObject(d.obj); laPersist();
+    if(LA.DEBUG){ const o=d.obj;
+      if(d.line) console.log('[LA draw] '+o.laType+' canvas pts: ('+Math.round(o.x1)+','+Math.round(o.y1)+') -> ('+Math.round(o.x2)+','+Math.round(o.y2)+')');
+      else console.log('[LA draw] '+o.laType+' canvas left/top/w/h:',Math.round(o.left),Math.round(o.top),Math.round(o.width||o.rx*2),Math.round(o.height||o.ry*2),'angle:',o.angle||0);
+    }
+  }
   laApplyToolMode(); c.requestRenderAll();
 }
 
@@ -5249,35 +5258,31 @@ function laSerializedToAnno(s, fileIdx, pg){
   const col=s.laColor||s.stroke||s.fill||'#000000';
   const base={ _pdfSpace:true, _baked:false, color:col, strokeSize:s.laStroke||s.strokeWidth||3,
                dash:s.laDash||'solid', rot:0 };
+  if(LA.DEBUG) console.log('[LA bake] type:',s.laType,'| canvas left/top/w/h:',Math.round(s.left),Math.round(s.top),Math.round((s.width||s.rx*2||0)*(s.scaleX||1)),Math.round((s.height||s.ry*2||0)*(s.scaleY||1)),'angle:',s.angle||0,'| vp.rotation:',vp.rotation,'vp.scale:',vp.scale);
   if(s.laType==='text'){
     // top-left of textbox in canvas coords
     const [px,py]=laScreenToPdf(s.left, s.top);
+    if(LA.DEBUG) console.log('[LA bake]   text canvas('+Math.round(s.left)+','+Math.round(s.top)+') -> pdf('+Math.round(px)+','+Math.round(py)+')');
     return Object.assign(base,{ type:'text', _px:px, _py:py, text:s.laText!=null?s.laText:s.text,
       fontSize:s.fontSize||18, font:s.laFont||'Helvetica', bold:!!s.laBold, italic:!!s.laItalic, rot:s.angle||0 });
   }
   if(s.laType==='line'||s.laType==='arrow'){
-    // fabric line stores x1,y1,x2,y2 relative to its own coordinate; with no scaling
-    // the absolute scene coords are left/top + (x1..). Simplest: use the object's
-    // calc'd points. When unmodified, x1/y1/x2/y2 already are scene coords.
     const [a1x,a1y]=laScreenToPdf(s.x1,s.y1);
     const [a2x,a2y]=laScreenToPdf(s.x2,s.y2);
+    if(LA.DEBUG) console.log('[LA bake]   line canvas('+Math.round(s.x1)+','+Math.round(s.y1)+')->('+Math.round(s.x2)+','+Math.round(s.y2)+') => pdf('+Math.round(a1x)+','+Math.round(a1y)+')->('+Math.round(a2x)+','+Math.round(a2y)+')');
     return Object.assign(base,{ type:s.laType, _x1:a1x,_y1:a1y,_x2:a2x,_y2:a2y,
       headStart:s.laHeadStart||'none', headEnd:s.laHeadEnd||'none' });
   }
   if(s.laType==='highlight'||s.laType==='rect'){
     const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
-    // The object may also be rotated by the user (s.angle). Compute its 4 corners
-    // in CANVAS coords (accounting for object angle about its center), then convert
-    // each corner through the viewport so PAGE rotation is also handled. We draw a
-    // polygon through the 4 PDF-space corners — correct under any rotation.
     const corners = laRectCornersCanvas(s.left, s.top, w, h, s.angle||0);
     const pdfPts = corners.map(c=>{ const p=laScreenToPdf(c[0],c[1]); return [p[0],p[1]]; });
+    if(LA.DEBUG) console.log('[LA bake]   rect canvas corners:',corners.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '),'=> pdf:',pdfPts.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '));
     return Object.assign(base,{ type:s.laType==='highlight'?'polyfill':'polystroke',
       _pts:pdfPts, opacity:(s.laType==='highlight')?(s.laOpacity||s.opacity||0.32):1 });
   }
   if(s.laType==='circle'){
     const rx=(s.rx||0)*(s.scaleX||1), ry=(s.ry||0)*(s.scaleY||1);
-    // Approximate ellipse with a polygon of points around it, converted per-point.
     const cxC=s.left+rx, cyC=s.top+ry; const ang=(s.angle||0)*Math.PI/180;
     const pts=[]; const N=40;
     for(let i=0;i<N;i++){ const th=i/N*2*Math.PI;
@@ -5285,6 +5290,7 @@ function laSerializedToAnno(s, fileIdx, pg){
       const rxp=ex*Math.cos(ang)-ey*Math.sin(ang), ryp=ex*Math.sin(ang)+ey*Math.cos(ang);
       const p=laScreenToPdf(cxC+rxp, cyC+ryp); pts.push([p[0],p[1]]);
     }
+    if(LA.DEBUG) console.log('[LA bake]   circle center canvas('+Math.round(cxC)+','+Math.round(cyC)+') rx/ry',Math.round(rx),Math.round(ry));
     return Object.assign(base,{ type:'polystroke', _pts:pts, _closed:true });
   }
   return null;
