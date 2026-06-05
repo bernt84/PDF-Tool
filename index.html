@@ -551,7 +551,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 <!-- SEARCH BAR -->
 <div id="search-bar">
-  <input id="sb-inp" type="text" placeholder="Find tekst…" oninput="searchText(this.value)" onkeydown="sbKey(event)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="ptp-find-text"/>
+  <input id="sb-inp" type="search" placeholder="Find tekst…" oninput="searchText(this.value)" onkeydown="sbKey(event)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="ptp-find-text-x" readonly onfocus="this.removeAttribute('readonly')" data-lpignore="true" data-form-type="other"/>
   <span id="sb-info">0 / 0</span>
   <button class="btn bGh bXs" onclick="sbNav(-1)">▲</button>
   <button class="btn bGh bXs" onclick="sbNav(1)">▼</button>
@@ -719,7 +719,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 <div id="preview-mode" style="display:flex;flex:1;overflow:hidden">
   <div id="file-panel">
     <div id="fp-top">
-      <input type="text" name="email" style="display:none" aria-hidden="true"/><input type="password" name="password" style="display:none" aria-hidden="true"/><input id="fsrch" type="text" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off"/>
+      <input id="fsrch" type="search" placeholder="Søg filer…" oninput="filterFiles(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="ptp-file-search-x" readonly onfocus="this.removeAttribute('readonly')" data-lpignore="true" data-form-type="other"/>
       <button class="btn bGh bSm" onclick="selAll()">☑</button>
       <button class="btn bGh bSm" onclick="selNone()">☐</button>
     </div>
@@ -4930,6 +4930,7 @@ const LA = {
   DASHES: [['solid','Hel','ti-minus'],['dashed','Stiplet','ti-line-dashed'],['dotted','Punkteret','ti-line-dotted']],
   FONTS: [['Helvetica','Helvetica, Arial, sans-serif'],['Times','\'Times New Roman\', Times, serif'],['Courier','\'Courier New\', Courier, monospace']],
   TOOLS: ['rect','circle','text','arrow','line','highlight'],
+  DEBUG: false,   // sæt LA.DEBUG=true i konsollen for at se diagnostik
 };
 
 function laIsLine(o){ return o.type==='arrow' || o.type==='line'; }
@@ -4976,12 +4977,15 @@ async function laRefreshViewport(){
   // maps coordinates identically to the rendered page, including after rotation.
   if(LA._canvasVp){
     const dpr = LA._canvasDpr || window.devicePixelRatio || 1;
-    try { LA._vp = LA._canvasVp.clone({ scale: S.zoom }); return; }
-    catch(e){ /* clone may not accept scale on some builds; fall through */ }
+    try { LA._vp = LA._canvasVp.clone({ scale: S.zoom });
+      if(LA.DEBUG) console.log('[LA] viewport via clone — rot:',LA._vp.rotation,'scale:',LA._vp.scale,'size:',Math.round(LA._vp.width),'x',Math.round(LA._vp.height),'S.rotation:',S.rotation);
+      return; }
+    catch(e){ if(LA.DEBUG)console.warn('[LA] clone failed, fallback',e); }
   }
   const page = await f.pdfJsDoc.getPage(S.page);
   const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
   LA._vp = page.getViewport({ scale:S.zoom, rotation:(S.rotation+pageRot)%360 });
+  if(LA.DEBUG) console.log('[LA] viewport via getViewport — rot:',(S.rotation+pageRot)%360,'scale:',S.zoom,'pageRot:',pageRot);
 }
 
 // ---- Layer lifecycle --------------------------------------------------------
@@ -5450,6 +5454,11 @@ function laToAnno(o){
 
 // Public API used by host code
 window.LA = LA;
+// Global diagnostics: any uncaught error is printed clearly so it can be copied.
+window.addEventListener('error', (e)=>{ console.error('[PTP ERROR]', e.message, 'at', e.filename+':'+e.lineno+':'+e.colno, e.error&&e.error.stack?('\n'+e.error.stack):''); });
+window.addEventListener('unhandledrejection', (e)=>{ console.error('[PTP PROMISE ERROR]', e.reason && e.reason.message ? e.reason.message : e.reason, e.reason&&e.reason.stack?('\n'+e.reason.stack):''); });
+// Helper to dump the current live-anno state for support.
+window.laDump = function(){ try{ console.log('[LA DUMP] S.rotation=',S.rotation,'zoom=',S.zoom,'page=',S.page,'activeIdx=',S.activeIdx); console.log('[LA DUMP] objects on page=', JSON.stringify((LA.objects[S.activeIdx]&&LA.objects[S.activeIdx][S.page])||[], (k,v)=>k==='_el'?undefined:v)); console.log('[LA DUMP] vp rotation=',LA._vp&&LA._vp.rotation,'scale=',LA._vp&&LA._vp.scale); }catch(e){ console.error(e); } };
 window.laRenderPage = laRenderPage;
 window.laSyncLayerSize = laSyncLayerSize;
 window.laFlushToAnnos = laFlushToAnnos;
