@@ -5104,7 +5104,24 @@ const LA_PROPS=['laType','laColor','laStroke','laDash','laOpacity','laFont','laB
 function laPersist(){
   const c=LA.canvas; if(!c) return;
   const arr=c.getObjects().map(o=>o.toObject(LA_PROPS));
+  arr._zoom = S.zoom;   // remember the display scale these pixel coords belong to
   LA.objectsByPage[S.activeIdx][S.page]=arr;
+}
+// Scale a serialized object list from the zoom it was stored at to the current zoom.
+function laRescaleList(list, fromZoom, toZoom){
+  if(!fromZoom || !toZoom || Math.abs(fromZoom-toZoom)<1e-6) return;
+  const k = toZoom/fromZoom;
+  list.forEach(s=>{
+    if(s.laType==='line'||s.laType==='arrow'){
+      s.x1*=k; s.y1*=k; s.x2*=k; s.y2*=k; s.left*=k; s.top*=k; s.width*=k; s.height*=k;
+      s.strokeWidth=(s.strokeWidth||1);   // keep stroke visual weight roughly stable
+    } else if(s.laType==='circle'){
+      s.left*=k; s.top*=k; s.rx=(s.rx||0)*k; s.ry=(s.ry||0)*k;
+    } else {
+      s.left*=k; s.top*=k; s.width=(s.width||0)*k; s.height=(s.height||0)*k;
+      if(s.laType==='text' && s.fontSize) s.fontSize*=k;
+    }
+  });
 }
 
 // Build/refresh the fabric canvas for the current page.
@@ -5116,10 +5133,14 @@ async function laRenderPage(){
   c.clear();
   const list=laCurrentList();
   if(list.length){
+    // Rescale from the zoom the objects were stored at to the current zoom, so
+    // annotations stay put when the page is zoomed (incl. zoomFit after rotation).
+    const storedZoom = (list._zoom!=null) ? list._zoom : S.zoom;
+    if(Math.abs(storedZoom - S.zoom) > 1e-6){ laRescaleList(list, storedZoom, S.zoom); list._zoom = S.zoom; }
     try{
       const objs=await fabric.util.enlivenObjects(list);
       objs.forEach(o=>{ laAttach(o); c.add(o); });
-      if(LA.DEBUG){ console.log('[LA render] rebuilt',objs.length,'objects on canvas',Math.round(c.getWidth())+'x'+Math.round(c.getHeight()),'(vp rot '+(LA._vp?LA._vp.rotation:'?')+'):');
+      if(LA.DEBUG){ console.log('[LA render] rebuilt',objs.length,'objects on canvas',Math.round(c.getWidth())+'x'+Math.round(c.getHeight()),'(vp rot '+(LA._vp?LA._vp.rotation:'?')+', zoom '+S.zoom.toFixed(3)+'):');
         objs.forEach(o=>{ console.log('[LA render]   '+o.laType+' L/T/W/H',Math.round(o.left),Math.round(o.top),Math.round(o.width||o.rx*2||0),Math.round(o.height||o.ry*2||0)); }); }
     }catch(e){ if(LA.DEBUG)console.error('[LA] enliven',e); }
   }
@@ -5185,6 +5206,7 @@ async function laRemapForRotation(deltaDeg){
   try{ newVp = oldVp.clone({ rotation:newRotation }); }
   catch(e){ const page=await f.pdfJsDoc.getPage(S.page); newVp=page.getViewport({scale:S.zoom, rotation:newRotation}); }
   laRemapList(list, oldVp, newVp, deltaDeg);
+  list._zoom = S.zoom;
   if(LA.DEBUG) console.log('[LA remap] active page rotated',list.length,'objects by',deltaDeg,'deg ('+oldVp.rotation+'->'+newVp.rotation+')');
 }
 window.laRemapForRotation=laRemapForRotation;
@@ -5206,6 +5228,7 @@ async function laRemapPageForRotation(fileIdx, pageNum, deltaDeg, currentRot){
   const oldVp=page.getViewport({scale:sc, rotation:r0});
   const newVp=page.getViewport({scale:sc, rotation:r1});
   laRemapList(list, oldVp, newVp, deltaDeg);
+  list._zoom = sc;   // coords are now at this display scale
   if(LA.DEBUG) console.log('[LA remap] page',pageNum,'rotated',list.length,'objects by',deltaDeg,'deg ('+r0+'->'+r1+')');
 }
 window.laRemapPageForRotation=laRemapPageForRotation;
