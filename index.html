@@ -691,25 +691,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
       </div>
     </div>
   </div>
-  <!-- Right: colors + sliders -->
+  <!-- Right: current tool label (per-object styling is on the floating toolbar) -->
   <div class="mb-right">
     <span id="mb-tool-lbl">↖ Vælg</span>
-    <div class="mb-vsep"></div>
-    <div class="color-pick sel" style="background:#eab308" onclick="setColor('#eab308',this)"></div>
-    <div class="color-pick" style="background:#22c55e" onclick="setColor('#22c55e',this)"></div>
-    <div class="color-pick" style="background:#3b82f6" onclick="setColor('#3b82f6',this)"></div>
-    <div class="color-pick" style="background:#ef4444" onclick="setColor('#ef4444',this)"></div>
-    <div class="color-pick" style="background:#a855f7" onclick="setColor('#a855f7',this)"></div>
-    <div class="color-pick" style="background:#000000" onclick="setColor('#000000',this)"></div>
-    <div class="color-pick" style="background:#ffffff;border:2px solid var(--bd2)" onclick="setColor('#ffffff',this)"></div>
-    <div class="mb-vsep"></div>
-    <span style="font-size:10px;color:var(--t3)">Str</span>
-    <input type="range" id="stroke-sz" min="1" max="20" value="3" style="width:50px"/>
-    <span style="font-size:10px;color:var(--t3)">Op</span>
-    <input type="range" id="op-sl" min="10" max="100" value="70" style="width:45px"/>
-    <select id="fnt-sz" style="background:var(--sf2);border:1px solid var(--bd);color:var(--t1);border-radius:4px;font-size:11px;padding:1px 3px;outline:none;height:22px">
-      <option>10</option><option>12</option><option selected>14</option><option>16</option><option>18</option><option>24</option><option>32</option><option>48</option>
-    </select>
   </div>
 </div>
 
@@ -1269,9 +1253,9 @@ function updateApiKey(){
 // ================================================================
 showEmpty(true);updateBulkSum();initApiKey();
 document.querySelectorAll('.mbk').forEach(bk=>bk.addEventListener('click',e=>{if(e.target===bk)bk.classList.remove('open');}));
-document.getElementById('stroke-sz').addEventListener('input',e=>S.strokeSize=parseInt(e.target.value));
-document.getElementById('op-sl').addEventListener('input',e=>S.opacity=parseInt(e.target.value)/100);
-document.getElementById('fnt-sz').addEventListener('change',e=>S.fontSize=parseInt(e.target.value));
+(function(){ const ss=document.getElementById('stroke-sz'); if(ss) ss.addEventListener('input',e=>S.strokeSize=parseInt(e.target.value)); })();
+(function(){ const op=document.getElementById('op-sl'); if(op) op.addEventListener('input',e=>S.opacity=parseInt(e.target.value)/100); })();
+(function(){ const fz=document.getElementById('fnt-sz'); if(fz) fz.addEventListener('change',e=>S.fontSize=parseInt(e.target.value)); })();
 document.getElementById('sig-w').addEventListener('input',e=>document.getElementById('sig-w-val').textContent=e.target.value+'px');
 document.addEventListener('click',e=>{if(!e.target.closest('.mb-group')&&!e.target.closest('.mb-menu'))closeMenus();});
 document.addEventListener('keydown',e=>{
@@ -1459,7 +1443,7 @@ async function openFile(idx){
   if(S.activeIdx>=0&&S.activeIdx<S.files.length)S.files[S.activeIdx]._existingBms=S.bms.map(b=>({...b}));
   if(S._mode==='list')flushListBmEdits();
   S.activeIdx=idx;S.page=1;S.zoom=1.0;
-  S.rotation=S.files[idx]._viewRotation||0;
+  S.rotation=0; // per-page rotation lives in f.pageRotations now (single source of truth)
   S.customFn=null;closeFnBox();cancelBmEdit();
   // Clear text editor when switching files
   if(TE.active){TE.active=false;teClearOverlay();document.getElementById('te-edit-bar').classList.remove('active');}
@@ -2241,7 +2225,8 @@ async function autoRotateAllPages(){
     updateProgress(pg,total,'Side '+pg+' / '+total);
     try{
       const page=await f.pdfJsDoc.getPage(pg);
-      const vp=page.getViewport({scale:2.0,rotation:0});   // higher res = better OSD
+      const curRot=(f.pageRotations&&f.pageRotations[pg])||0;   // analyze AS CURRENTLY SHOWN
+      const vp=page.getViewport({scale:2.0,rotation:curRot});
       const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
       const octx=off.getContext('2d');
       octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);   // white bg helps OSD
@@ -2252,9 +2237,9 @@ async function autoRotateAllPages(){
         const result=await runTesseract(off);
         rotation=detectRotationFromWords(result.words,off.width,off.height);
       }
-      console.log('[autoRotate] page',pg,'-> rotate',rotation,'deg');
+      console.log('[autoRotate] page',pg,'curRot',curRot,'-> additional rotate',rotation,'deg');
       if(rotation){
-        const before=(f.pageRotations[pg]||0);
+        const before=curRot;
         if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,pg,rotation,before); }catch(e){ console.error('remap',e); } }
         f.pageRotations[pg]=(before+rotation)%360; f._hasRotation=true; changed++;
       }
@@ -2289,7 +2274,8 @@ async function autoRotateAll(){
       for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
         if(S._cancelProgress)break;
         const page=await f.pdfJsDoc.getPage(pg);
-        const vp=page.getViewport({scale:2.0,rotation:0});
+        const curRot=(f.pageRotations&&f.pageRotations[pg])||0;
+        const vp=page.getViewport({scale:2.0,rotation:curRot});
         const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
         const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
         await page.render({canvasContext:octx,viewport:vp}).promise;
@@ -2297,7 +2283,7 @@ async function autoRotateAll(){
         if(useOsd){ rotation=await detectPageOrientation(off); }
         if(rotation==null){ const result=await runTesseract(off); rotation=detectRotationFromWords(result.words,off.width,off.height); }
         if(rotation){
-          const before=(f.pageRotations[pg]||0);
+          const before=curRot;
           if(fIdx>=0 && typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fIdx,pg,rotation,before); }catch(e){} }
           f.pageRotations[pg]=(before+rotation)%360; f._hasRotation=true; totalChanged++;
         }
@@ -2335,59 +2321,26 @@ async function rotateSingle(dir){
   if(S.activeIdx<0)return;
   const step = (dir===-90 || dir==='ccw') ? -90 : 90;   // default clockwise
   const f=S.files[S.activeIdx];
-  const btn=document.getElementById('tb-save');
-  if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
-  // Bake any pending annotations before rotating
-  const bufBefore = f.buf?.byteLength||0;
-  await bakePageNow(S.activeIdx, S.page);
-  console.log('buf before rotate:', bufBefore, '-> after bake:', f.buf?.byteLength);
-
-  console.log('rotateSingle: start, buf=', f.buf?.byteLength, 'step=', step);
+  if(!f.pdfJsDoc) return;
   try {
-    // 1. Bake rotation into PDF buffer
-    const doc=await PDFLib.PDFDocument.load(f.buf.slice(0));
-    const pdfPage=doc.getPage(S.page-1);
-    const cur=pdfPage.getRotation().angle||0;
-    const newRot=((cur+step)%360+360)%360;
-    // Set rotation directly in the page dict to ensure it's written
-    pdfPage.node.set(PDFLib.PDFName.of('Rotate'), PDFLib.PDFNumber.of(newRot));
-    // Also use the API method
-    pdfPage.setRotation(PDFLib.degrees(newRot));
-    
-    // 2. Clear canvas annotations - they're baked into buf already
-    // After rotation, renderPage re-renders PDF which visually includes them
-    if(S.annos[S.activeIdx]) S.annos[S.activeIdx][S.page]=[];
-    
-    const rotSaved = await doc.save();
-    f.buf = rotSaved.buffer ? rotSaved.buffer.slice(rotSaved.byteOffset, rotSaved.byteOffset + rotSaved.byteLength) : rotSaved.slice(0);
-    
-    // 3. Reload pdfJsDoc with new buf
-    const blob=new Blob([f.buf],{type:'application/pdf'});
-    const url=URL.createObjectURL(blob);
-    f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
-    
-    // 2b. Remap live Fabric objects from the old rotation to the new one so they
-    // follow the page content. Must run BEFORE S.rotation changes (uses old LA._vp).
-    if(typeof laRemapForRotation==='function'){ try{ await laRemapForRotation(step); }catch(e){ console.error('laRemapForRotation',e); } }
-
-    // 4. Set rotation state to match baked rotation
-    // pdf.js ignores PDF internal /Rotate — we must pass it explicitly
-    S.rotation = newRot;
-    f._viewRotation = newRot;
-    f._hasRotation = newRot !== 0;
     if(!f.pageRotations) f.pageRotations = {};
-    f.pageRotations[S.page] = 0; // no extra page rotation on top
-    
+    const before = ((f.pageRotations[S.page]||0)%360+360)%360;
+    // Remap live annotations from the current rotation to the new one FIRST,
+    // using the same page-rotation model auto-rotate uses (one source of truth).
+    if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,S.page,step,before); }catch(e){ console.error('remap',e); } }
+    // Apply the rotation purely as a view rotation (no baking into the buffer).
+    const newRot = ((before+step)%360+360)%360;
+    f.pageRotations[S.page] = newRot;
+    f._hasRotation = Object.values(f.pageRotations).some(r=>r);
+    if(LA.DEBUG) console.log('[rotateSingle] page',S.page,'step',step,'=>',before,'->',newRot);
     renderFileList();
     await renderPage();
-    zoomFit(); // fit rotated page to screen
-    await renderPage();
+    zoomFit();
     toast('Side '+S.page+' roteret ✓','ok');
   } catch(e) {
     console.error('Rotate error:',e);
     toast('Fejl: '+e.message,true);
   }
-  if(btn){btn.disabled=false;btn.innerHTML='⬇ Download';}
 }
 
 // ================================================================
@@ -2412,7 +2365,7 @@ async function renderPageThumbs(){
 }
 function highlightThumb(pg){document.querySelectorAll('.pt').forEach(t=>t.classList.toggle('active',parseInt(t.dataset.pg)===pg));}
 function delSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}S._selPages.forEach(p=>S.files[S.activeIdx].deletedPages.add(p));S._selPages.clear();renderPageThumbs();toast('Markeret til sletning');}
-function rotSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}const f=S.files[S.activeIdx];S._selPages.forEach(p=>{if(!f.pageRotations)f.pageRotations={};f.pageRotations[p]=(f.pageRotations[p]||0+90)%360;});f._hasRotation=true;renderFileList();renderPage();}
+function rotSelPages(){if(!S._selPages.size){toast('Vælg sider',true);return;}const f=S.files[S.activeIdx];S._selPages.forEach(p=>{if(!f.pageRotations)f.pageRotations={};const before=((f.pageRotations[p]||0)%360+360)%360;if(typeof laRemapPageForRotation==='function'){try{laRemapPageForRotation(S.activeIdx,p,90,before);}catch(e){}}f.pageRotations[p]=((before+90)%360+360)%360;});f._hasRotation=true;renderFileList();renderPage();}
 function extractSelPages(){if(!S._selPages.size){toast('Vælg sider i sidepanelet',true);return;}const pages=[...S._selPages].sort((a,b)=>a-b).join(', ');document.getElementById('extract-pages').value=pages;document.getElementById('extract-name').value=S.files[S.activeIdx].name.replace('.pdf','_udtræk.pdf');openM('m-extract');}
 
 // ================================================================
