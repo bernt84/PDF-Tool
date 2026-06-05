@@ -640,8 +640,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <div class="mb-group">
       <button class="mb-btn" onclick="toggleMenu('m-pages')">📄 Sider ▾</button>
       <div class="mb-menu" id="m-pages">
-        <div class="mb-item" onclick="rotateSingle();closeMenus()">↻ Roter 90°</div>
-        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter via OCR</div>
+        <div class="mb-item" onclick="rotateSingle(90);closeMenus()">↻ Roter 90° (med uret)</div>
+        <div class="mb-item" onclick="rotateSingle(-90);closeMenus()">↺ Roter 90° (mod uret)</div>
+        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side (OCR)</div>
+        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">↻ Auto-Roter alle sider (OCR)</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
         <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
@@ -671,7 +673,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Markering — Bulk…</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side</div>
-        <div class="mb-item" onclick="autoRotateAll();closeMenus()">↻ Auto-Roter alle markerede</div>
+        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">↻ Auto-Roter alle sider (dette dok.)</div>
+        <div class="mb-item" onclick="autoRotateAll();closeMenus()">↻ Auto-Roter alle markerede filer</div>
       </div>
     </div>
     <!-- Dokument -->
@@ -2213,11 +2216,44 @@ async function autoRotatePage(){
     if(!rotation){toast('Side allerede korrekt orienteret ✓','ok');}
     else{
       if(!f.pageRotations)f.pageRotations={};
-      f.pageRotations[S.page]=(f.pageRotations[S.page]||0)+rotation;
+      const before=(f.pageRotations[S.page]||0);
+      if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,S.page,rotation,before); }catch(e){ console.error('remap',e); } }
+      f.pageRotations[S.page]=before+rotation;
       f._hasRotation=true;await renderPage();renderFileList();
       toast('Roteret '+rotation+'° ✓','ok');
     }
   }catch(err){toast('Fejl: '+err.message,true);}
+}
+
+async function autoRotateAllPages(){
+  if(S.activeIdx<0){toast('Åbn et dokument først',true);return;}
+  const f=S.files[S.activeIdx];
+  if(!f.pdfJsDoc){toast('Dokument ikke klar',true);return;}
+  const total=f.pdfJsDoc.numPages;
+  showProgress('Auto-Roter alle sider',0,total);
+  try{ await getTessWorker(); }catch(e){ hideProgress(); toast('OCR fejl: '+e.message,true); return; }
+  if(!f.pageRotations)f.pageRotations={};
+  let changed=0;
+  for(let pg=1;pg<=total;pg++){
+    if(S._cancelProgress)break;
+    updateProgress(pg,total,'Side '+pg+' / '+total);
+    try{
+      const page=await f.pdfJsDoc.getPage(pg);
+      const vp=page.getViewport({scale:0.8,rotation:0});
+      const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
+      await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
+      const result=await runTesseract(off);
+      const rotation=detectRotationFromWords(result.words,off.width,off.height);
+      if(rotation){
+        const before=(f.pageRotations[pg]||0);
+        if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,pg,rotation,before); }catch(e){ console.error('remap',e); } }
+        f.pageRotations[pg]=before+rotation; f._hasRotation=true; changed++;
+      }
+    }catch(e){ if(window.LA&&LA.DEBUG)console.warn('autoRotateAllPages page',pg,e); }
+  }
+  hideProgress(); renderFileList();
+  if(S.activeIdx>=0) await renderPage();
+  toast(changed?('Roteret '+changed+' side(r) ✓'):'Alle sider var korrekt orienteret ✓','ok');
 }
 
 async function autoRotateAll(){
@@ -2236,7 +2272,11 @@ async function autoRotateAll(){
         await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
         const result=await runTesseract(off);
         const rotation=detectRotationFromWords(result.words,off.width,off.height);
-        if(rotation){f.pageRotations[pg]=rotation;f._hasRotation=true;}
+        if(rotation){
+          const fIdx=S.files.indexOf(f);
+          if(fIdx>=0 && typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fIdx,pg,rotation,0); }catch(e){} }
+          f.pageRotations[pg]=rotation;f._hasRotation=true;
+        }
       }
     }catch(e){}
   }
@@ -2260,8 +2300,9 @@ function zoomFit(){
     renderPage();
   });
 }
-async function rotateSingle(){
+async function rotateSingle(dir){
   if(S.activeIdx<0)return;
+  const step = (dir===-90 || dir==='ccw') ? -90 : 90;   // default clockwise
   const f=S.files[S.activeIdx];
   const btn=document.getElementById('tb-save');
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
@@ -2270,13 +2311,13 @@ async function rotateSingle(){
   await bakePageNow(S.activeIdx, S.page);
   console.log('buf before rotate:', bufBefore, '-> after bake:', f.buf?.byteLength);
 
-  console.log('rotateSingle: start, buf=', f.buf?.byteLength);
+  console.log('rotateSingle: start, buf=', f.buf?.byteLength, 'step=', step);
   try {
     // 1. Bake rotation into PDF buffer
     const doc=await PDFLib.PDFDocument.load(f.buf.slice(0));
     const pdfPage=doc.getPage(S.page-1);
     const cur=pdfPage.getRotation().angle||0;
-    const newRot=(cur+90)%360;
+    const newRot=((cur+step)%360+360)%360;
     // Set rotation directly in the page dict to ensure it's written
     pdfPage.node.set(PDFLib.PDFName.of('Rotate'), PDFLib.PDFNumber.of(newRot));
     // Also use the API method
@@ -2296,7 +2337,7 @@ async function rotateSingle(){
     
     // 2b. Remap live Fabric objects from the old rotation to the new one so they
     // follow the page content. Must run BEFORE S.rotation changes (uses old LA._vp).
-    if(typeof laRemapForRotation==='function'){ try{ await laRemapForRotation(90); }catch(e){ console.error('laRemapForRotation',e); } }
+    if(typeof laRemapForRotation==='function'){ try{ await laRemapForRotation(step); }catch(e){ console.error('laRemapForRotation',e); } }
 
     // 4. Set rotation state to match baked rotation
     // pdf.js ignores PDF internal /Rotate — we must pass it explicitly
@@ -5026,25 +5067,8 @@ async function laRenderPage(){
   LA._loading=false;
 }
 
-// Remap all stored objects for the CURRENT page when the page is rotated by
-// `deltaDeg` (e.g. +90). Uses the OLD viewport (current LA._vp, pre-rotation)
-// to read PDF coords, then the NEW viewport to place them on the rotated canvas.
-// Geometry is stored in canvas coords, so we go canvas(old) -> PDF -> canvas(new).
-async function laRemapForRotation(deltaDeg){
-  const c=LA.canvas; if(!c) return;
-  // make sure latest edits are serialized
-  laPersist();
-  const list = laCurrentList();
-  if(!list.length) return;
-  const f=S.files[S.activeIdx]; if(!f||!f.pdfJsDoc) return;
-  const oldVp = LA._vp;                                  // pre-rotation viewport (rotation R)
-  if(!oldVp){ if(LA.DEBUG)console.warn('[LA remap] no oldVp'); return; }
-  // New viewport = same page geometry, rotation advanced by delta. Clone the OLD
-  // viewport so we don't depend on the reloaded page's intrinsic /Rotate.
-  const newRotation = ((oldVp.rotation+deltaDeg)%360+360)%360;
-  let newVp;
-  try{ newVp = oldVp.clone({ rotation:newRotation }); }
-  catch(e){ const page=await f.pdfJsDoc.getPage(S.page); newVp=page.getViewport({scale:S.zoom, rotation:newRotation}); }
+// Core: transform a serialized object list from oldVp canvas-space to newVp canvas-space.
+function laRemapList(list, oldVp, newVp, deltaDeg){
   const c2p = (x,y)=>{ const p=oldVp.convertToPdfPoint(x,y); return [p[0],p[1]]; };
   const p2c = (px,py)=>{ const p=newVp.convertToViewportPoint(px,py); return [p[0],p[1]]; };
   const remap = (x,y)=>{ const [px,py]=c2p(x,y); return p2c(px,py); };
@@ -5052,32 +5076,67 @@ async function laRemapForRotation(deltaDeg){
     if(s.laType==='line'||s.laType==='arrow'){
       const [nx1,ny1]=remap(s.x1,s.y1); const [nx2,ny2]=remap(s.x2,s.y2);
       s.x1=nx1; s.y1=ny1; s.x2=nx2; s.y2=ny2;
-      // fabric stores left/top as bounding box; recompute
       s.left=Math.min(nx1,nx2); s.top=Math.min(ny1,ny2);
       s.width=Math.abs(nx2-nx1); s.height=Math.abs(ny2-ny1);
     } else if(s.laType==='circle'){
       const rx=(s.rx||0)*(s.scaleX||1), ry=(s.ry||0)*(s.scaleY||1);
       const cx=s.left+rx, cy=s.top+ry;
       const [ncx,ncy]=remap(cx,cy);
-      // 90/270 swaps rx/ry visually
       const swap=(Math.abs(deltaDeg)%180)===90;
       const nrx=swap?ry:rx, nry=swap?rx:ry;
       s.rx=nrx; s.ry=nry; s.scaleX=1; s.scaleY=1;
       s.left=ncx-nrx; s.top=ncy-nry;
-    } else { // rect, highlight, text — use top-left + size
+    } else {
       const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
-      // transform the top-left and bottom-right corners, rebuild axis-aligned box
       const [ax,ay]=remap(s.left,s.top);
       const [bx,by]=remap(s.left+w,s.top+h);
       s.left=Math.min(ax,bx); s.top=Math.min(ay,by);
       const nw=Math.abs(bx-ax), nh=Math.abs(by-ay);
-      if(s.laType==='text'){ s.scaleX=1; s.scaleY=1; /* keep font size; box width approx */ if(nw>4)s.width=nw; }
+      if(s.laType==='text'){ s.scaleX=1; s.scaleY=1; if(nw>4)s.width=nw; }
       else { s.width=nw; s.height=nh; s.scaleX=1; s.scaleY=1; }
     }
   });
-  if(LA.DEBUG) console.log('[LA remap] rotated',list.length,'objects by',deltaDeg,'deg (oldRot',oldVp?oldVp.rotation:'?','-> newRot',newVp.rotation,')');
+}
+
+// Remap all stored objects for the CURRENT page when rotated by deltaDeg.
+// Uses the OLD viewport (current LA._vp) then a clone advanced by delta.
+async function laRemapForRotation(deltaDeg){
+  const c=LA.canvas; if(!c) return;
+  laPersist();
+  const list = laCurrentList();
+  if(!list.length) return;
+  const f=S.files[S.activeIdx]; if(!f||!f.pdfJsDoc) return;
+  const oldVp = LA._vp;
+  if(!oldVp){ if(LA.DEBUG)console.warn('[LA remap] no oldVp'); return; }
+  const newRotation = ((oldVp.rotation+deltaDeg)%360+360)%360;
+  let newVp;
+  try{ newVp = oldVp.clone({ rotation:newRotation }); }
+  catch(e){ const page=await f.pdfJsDoc.getPage(S.page); newVp=page.getViewport({scale:S.zoom, rotation:newRotation}); }
+  laRemapList(list, oldVp, newVp, deltaDeg);
+  if(LA.DEBUG) console.log('[LA remap] active page rotated',list.length,'objects by',deltaDeg,'deg ('+oldVp.rotation+'->'+newVp.rotation+')');
 }
 window.laRemapForRotation=laRemapForRotation;
+
+// Remap stored objects for ANY page (active or not) by deltaDeg. Builds both
+// viewports from the page itself at scale 1 (rotation is all that matters for
+// the canvas->PDF->canvas mapping; scale cancels out). currentRot is the page's
+// view rotation BEFORE this delta is applied.
+async function laRemapPageForRotation(fileIdx, pageNum, deltaDeg, currentRot){
+  if(fileIdx===S.activeIdx && pageNum===S.page) laPersist();
+  const byPage = LA.objectsByPage[fileIdx];
+  const list = byPage && byPage[pageNum];
+  if(!list || !list.length) return;   // nothing to remap on this page
+  const f=S.files[fileIdx]; if(!f||!f.pdfJsDoc) return;
+  let page; try{ page=await f.pdfJsDoc.getPage(pageNum); }catch(e){ return; }
+  const r0=((currentRot||0)%360+360)%360;
+  const r1=((r0+deltaDeg)%360+360)%360;
+  const sc=S.zoom||1;   // objects are stored in display-scale canvas coords
+  const oldVp=page.getViewport({scale:sc, rotation:r0});
+  const newVp=page.getViewport({scale:sc, rotation:r1});
+  laRemapList(list, oldVp, newVp, deltaDeg);
+  if(LA.DEBUG) console.log('[LA remap] page',pageNum,'rotated',list.length,'objects by',deltaDeg,'deg ('+r0+'->'+r1+')');
+}
+window.laRemapPageForRotation=laRemapPageForRotation;
 
 // ---- creating objects ------------------------------------------------------
 function laStyleFor(){
