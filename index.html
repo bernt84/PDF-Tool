@@ -551,7 +551,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 
 <!-- SEARCH BAR -->
 <div id="search-bar">
-  <input id="sb-inp" type="text" placeholder="Find tekst…" oninput="searchText(this.value)" onkeydown="sbKey(event)"/>
+  <input id="sb-inp" type="text" placeholder="Find tekst…" oninput="searchText(this.value)" onkeydown="sbKey(event)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="ptp-find-text"/>
   <span id="sb-info">0 / 0</span>
   <button class="btn bGh bXs" onclick="sbNav(-1)">▲</button>
   <button class="btn bGh bXs" onclick="sbNav(1)">▼</button>
@@ -1500,6 +1500,7 @@ async function renderPage(){
   document.getElementById('te-pgnum').textContent=S.page;
   document.getElementById('anno-pg-lbl').textContent='Side '+S.page;
   redrawAnnos();setupAnnoEvents();
+  LA._canvasVp = vp; LA._canvasDpr = window.devicePixelRatio;
   if(typeof laRenderPage==='function'){ try{ await laRenderPage(); }catch(e){ console.error('laRenderPage',e); } }
   if(S._searchText)renderSearchHighlights();
   if(S._inlineEditMode)refreshTextOverlay();
@@ -2735,14 +2736,32 @@ async function bakeLiveAnno(doc,page,a,pW,pH){
   const opacity = a.opacity!=null?a.opacity:1;
   const th = a.strokeSize||3;
   const dashArray = laDashPattern(a);
+  const deg = -(a.rot||0);
+  const rad = deg*Math.PI/180;
+  function anchorAboutCenter(blX, blY, w, h){
+    const cx = blX + w/2, cy = blY + h/2;
+    const dx = blX - cx, dy = blY - cy;
+    const rx = dx*Math.cos(rad) - dy*Math.sin(rad);
+    const ry = dx*Math.sin(rad) + dy*Math.cos(rad);
+    return { x: cx + rx, y: cy + ry };
+  }
   if(a.type==='text'){
     if(!a.text) return;
     const font=await laFontFor(doc,a);
     const fs=a.fontSize||18;
     const lines=String(a.text).split('\n');
-    // a._px,_py is the top-left of the text box in PDF space (y measured from top via pdf.js convert).
-    // pdf.js convertToPdfPoint already returns bottom-left origin coords, so _py is the TOP edge's pdf-y.
-    lines.forEach((ln,li)=>{ try{ page.drawText(ln,{x:a._px,y:a._py-(li+1)*fs*1.02,size:fs,font,color,opacity}); }catch(e){} });
+    if(!a.rot){
+      lines.forEach((ln,li)=>{ try{ page.drawText(ln,{x:a._px,y:a._py-(li+1)*fs*1.02,size:fs,font,color,opacity}); }catch(e){} });
+    } else {
+      let maxW=0; lines.forEach(ln=>{ try{ maxW=Math.max(maxW,font.widthOfTextAtSize(ln,fs)); }catch(e){ maxW=Math.max(maxW,ln.length*fs*0.5); } });
+      const boxH=lines.length*fs*1.02;
+      const blX=a._px, blY=a._py-boxH;
+      lines.forEach((ln,li)=>{
+        const lx=blX, ly=a._py-(li+1)*fs*1.02;
+        const an=anchorAboutCenterFor(blX,blY,maxW,boxH,lx,ly,rad);
+        try{ page.drawText(ln,{x:an.x,y:an.y,size:fs,font,color,opacity,rotate:PDFLib.degrees(deg)}); }catch(e){}
+      });
+    }
     return;
   }
   if(a.type==='line'||a.type==='arrow'){
@@ -2755,16 +2774,32 @@ async function bakeLiveAnno(doc,page,a,pW,pH){
     if(a.headStart&&a.headStart!=='none') laHeadPath(page,x1,y1,angStart,a.headStart,hsz,color,opacity,th);
     return;
   }
-  // rect / circle / highlight — _px,_py is top-left in pdf.js-space; _ph height downward.
   const x=a._px, topY=a._py, w=a._pw, h=a._ph;
-  const bottomY=topY-h;   // bottom edge in pdf bottom-left origin space
+  const bottomY=topY-h;
+  const anchor = a.rot ? anchorAboutCenter(x,bottomY,w,h) : {x:x,y:bottomY};
+  const rotOpt = a.rot ? { rotate: PDFLib.degrees(deg) } : {};
   if(a.type==='highlight'){
-    page.drawRectangle({x:x,y:bottomY,width:Math.max(1,w),height:Math.max(1,h),color,opacity:(a.opacity!=null?a.opacity:0.32),borderWidth:0});
+    page.drawRectangle(Object.assign({x:anchor.x,y:anchor.y,width:Math.max(1,w),height:Math.max(1,h),color,opacity:(a.opacity!=null?a.opacity:0.32),borderWidth:0},rotOpt));
   } else if(a.type==='rect'){
-    page.drawRectangle({x:x,y:bottomY,width:Math.max(1,w),height:Math.max(1,h),borderColor:color,borderWidth:th,opacity,color:undefined});
+    page.drawRectangle(Object.assign({x:anchor.x,y:anchor.y,width:Math.max(1,w),height:Math.max(1,h),borderColor:color,borderWidth:th,opacity,color:undefined},rotOpt));
   } else if(a.type==='circle'){
-    page.drawEllipse({x:x+w/2,y:bottomY+h/2,xScale:w/2,yScale:h/2,borderColor:color,borderWidth:th,opacity,color:undefined});
+    page.drawEllipse(Object.assign({x:x+w/2,y:bottomY+h/2,xScale:w/2,yScale:h/2,borderColor:color,borderWidth:th,opacity,color:undefined}, a.rot?{rotate:PDFLib.degrees(deg)}:{}));
   }
+}
+function anchorAboutCenterFor(blX,blY,w,h,lx,ly,rad){
+  const cx=blX+w/2, cy=blY+h/2;
+  const dx=lx-cx, dy=ly-cy;
+  const rx=dx*Math.cos(rad)-dy*Math.sin(rad);
+  const ry=dx*Math.sin(rad)+dy*Math.cos(rad);
+  return { x:cx+rx, y:cy+ry };
+}
+// Rotate a per-line anchor (lx,ly) about the text block's center.
+function anchorAboutCenterFor(blX,blY,w,h,lx,ly,rad){
+  const cx=blX+w/2, cy=blY+h/2;
+  const dx=lx-cx, dy=ly-cy;
+  const rx=dx*Math.cos(rad)-dy*Math.sin(rad);
+  const ry=dx*Math.sin(rad)+dy*Math.cos(rad);
+  return { x:cx+rx, y:cy+ry };
 }
 
 async function bakeAnnotations(doc,fileIdx){
@@ -4936,6 +4971,14 @@ function laPdfToScreen(pdfX, pdfY){
 async function laRefreshViewport(){
   const f = S.files[S.activeIdx];
   if(!f || !f.pdfJsDoc){ LA._vp=null; return; }
+  // Prefer the EXACT viewport renderPage used for the canvas, re-scaled from
+  // device pixels to CSS pixels (divide by dpr). This guarantees the live layer
+  // maps coordinates identically to the rendered page, including after rotation.
+  if(LA._canvasVp){
+    const dpr = LA._canvasDpr || window.devicePixelRatio || 1;
+    try { LA._vp = LA._canvasVp.clone({ scale: S.zoom }); return; }
+    catch(e){ /* clone may not accept scale on some builds; fall through */ }
+  }
   const page = await f.pdfJsDoc.getPage(S.page);
   const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
   LA._vp = page.getViewport({ scale:S.zoom, rotation:(S.rotation+pageRot)%360 });
