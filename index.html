@@ -1487,6 +1487,8 @@ async function renderPage(){
   redrawAnnos();setupAnnoEvents();
   LA._canvasVp = vp; LA._canvasDpr = window.devicePixelRatio;
   if(typeof laRenderPage==='function'){ try{ await laRenderPage(); }catch(e){ console.error('laRenderPage',e); } }
+  // Keep #anno-canvas vs Fabric pointer-events consistent with the active tool
+  (function(){ const av=document.getElementById('anno-canvas'); if(av){ const fabricOwns=(typeof LIVE_TOOLS!=='undefined'&&LIVE_TOOLS.indexOf(S.tool)>=0)||S.tool==='select'; av.style.pointerEvents=fabricOwns?'none':'auto'; } if(typeof laApplyToolMode==='function') laApplyToolMode(); })();
   if(S._searchText)renderSearchHighlights();
   if(S._inlineEditMode)refreshTextOverlay();
   if(typeof MuEditor!=='undefined'&&MuEditor.active)setTimeout(()=>MuEditor.loadPage(),300);
@@ -1546,6 +1548,10 @@ function setTool(t){
     else if(t==='text') av.style.cursor='text';
     else if(t==='highlight') av.style.cursor='crosshair';
     else av.style.cursor='crosshair';
+    // The Fabric layer sits above #anno-canvas. For Fabric-owned tools (and select,
+    // so existing Fabric objects can be grabbed) the old canvas must NOT eat clicks.
+    const fabricOwns = (typeof LIVE_TOOLS!=='undefined' && LIVE_TOOLS.indexOf(t)>=0) || t==='select';
+    av.style.pointerEvents = fabricOwns ? 'none' : 'auto';
   }
   // The Fabric annotation engine owns these tools; switch its mode accordingly.
   if(typeof laDeselect==='function' && t!=='select') laDeselect();
@@ -5061,12 +5067,13 @@ document.addEventListener('scroll', laRecalcOffset, true);
 function laApplyToolMode(){
   const c=LA.canvas; if(!c) return;
   const live=laIsTool(S.tool);
-  // Capture pointer whenever a tool is active OR there are objects to interact with.
-  const cap = live || c.getActiveObject() || laCurrentList().length>0;
+  // Capture pointer on the Fabric layer only for Fabric-owned tools, or for the
+  // select tool when there are objects to grab. Old tools (pen/redact/image) must
+  // pass through to #anno-canvas, so don't capture for them.
+  const cap = live || (S.tool==='select' && (c.getActiveObject() || laCurrentList().length>0));
   c.wrapperEl.style.pointerEvents = (S.activeIdx>=0 && cap)?'auto':'none';
   c.defaultCursor = live?'crosshair':'default';
-  // Always allow selection of existing objects, even while a drawing tool is active
-  // (pdf-editor.ai behaviour: click an existing object to grab it, draw on empty space).
+  // Always allow selection of existing objects, even while a drawing tool is active.
   c.selection = true;
   c.forEachObject(o=>{ o.selectable = true; o.evented = true; });
   c.requestRenderAll();
