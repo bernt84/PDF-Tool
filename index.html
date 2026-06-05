@@ -3568,7 +3568,9 @@ async function detectPageOrientation(canvas){
     const conf = d.orientation_confidence;
     if(window.LA && LA.DEBUG) console.log('[OSD] orientation_degrees:',deg,'confidence:',conf);
     if(typeof deg==='number' && !isNaN(deg)){
-      const correction = ((360 - deg) % 360 + 360) % 360;
+      // Tesseract's orientation_degrees IS the clockwise rotation needed to make
+      // the page upright (not the angle the text is rotated). Use it directly.
+      const correction = ((deg % 360) + 360) % 360;
       // With proper DPI + white bg + 2x render, real readings rise. Keep a low
       // floor to still reject pure noise on blank/sparse pages.
       const MIN_CONF = 0.7;
@@ -5065,9 +5067,16 @@ async function laSyncLayerSize(){
   const av=document.getElementById('anno-canvas');
   const w=av?parseFloat(av.style.width):0, h=av?parseFloat(av.style.height):0;
   c.setDimensions({width:w,height:h});
+  c.calcOffset();   // CRITICAL: refresh cached page offset so pointer maps correctly
   if(LA.DEBUG) console.log('[LA size] fabric canvas set to',Math.round(w)+'x'+Math.round(h),'| anno-canvas CSS:',av?av.style.width:'?',av?av.style.height:'?','| vp size:',LA._vp?(Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height)):'(none)','| dpr:',window.devicePixelRatio);
   laApplyToolMode();
 }
+
+// Keep Fabric's cached offset fresh when the layout shifts (scroll/resize),
+// otherwise clicks land offset from the cursor.
+function laRecalcOffset(){ if(LA.canvas){ try{ LA.canvas.calcOffset(); }catch(e){} } }
+window.addEventListener('resize', laRecalcOffset);
+document.addEventListener('scroll', laRecalcOffset, true);
 
 function laApplyToolMode(){
   const c=LA.canvas; if(!c) return;
@@ -5255,6 +5264,8 @@ function laMouseDown(opt){
   if(opt.target) return;
   if(!laIsTool(S.tool)) return;           // empty space + select tool: nothing to draw
   const p=c.getScenePoint(opt.e);
+  if(LA.DEBUG){ const r=c.wrapperEl.getBoundingClientRect(); const e=opt.e;
+    console.log('[LA pointer] client('+Math.round(e.clientX)+','+Math.round(e.clientY)+') wrapper('+Math.round(r.left)+','+Math.round(r.top)+') scene('+Math.round(p.x)+','+Math.round(p.y)+') expected~('+Math.round(e.clientX-r.left)+','+Math.round(e.clientY-r.top)+')'); }
   const st=laStyleFor();
   let obj;
   if(S.tool==='rect') obj=laMakeRect(p.x,p.y,1,1,st,false);
