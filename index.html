@@ -642,8 +642,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
       <div class="mb-menu" id="m-pages">
         <div class="mb-item" onclick="rotateSingle(90);closeMenus()">↻ Roter 90° (med uret)</div>
         <div class="mb-item" onclick="rotateSingle(-90);closeMenus()">↺ Roter 90° (mod uret)</div>
-        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side (OCR)</div>
-        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">↻ Auto-Roter alle sider (OCR)</div>
+        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">⟳ Auto-Roter dokument (OCR)</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
         <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
@@ -672,9 +671,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="switchRT('anno');closeMenus()">🔍 OCR Markering (søg)</div>
         <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Markering — Bulk…</div>
         <div class="mb-sep"></div>
-        <div class="mb-item" onclick="autoRotatePage();closeMenus()">↻ Auto-Roter denne side</div>
-        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">↻ Auto-Roter alle sider (dette dok.)</div>
-        <div class="mb-item" onclick="autoRotateAll();closeMenus()">↻ Auto-Roter alle markerede filer</div>
+        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">⟳ Auto-Roter dokument (OCR)</div>
+        <div class="mb-item" onclick="autoRotateAll();closeMenus()">⟳ Auto-Roter alle markerede filer</div>
       </div>
     </div>
     <!-- Dokument -->
@@ -2226,12 +2224,17 @@ async function autoRotatePage(){
 }
 
 async function autoRotateAllPages(){
+  console.log('[autoRotate] clicked. activeIdx=',S.activeIdx);
   if(S.activeIdx<0){toast('Åbn et dokument først',true);return;}
   const f=S.files[S.activeIdx];
   if(!f.pdfJsDoc){toast('Dokument ikke klar',true);return;}
   const total=f.pdfJsDoc.numPages;
-  showProgress('Auto-Roter alle sider',0,total);
-  try{ await getTessWorker(); }catch(e){ hideProgress(); toast('OCR fejl: '+e.message,true); return; }
+  console.log('[autoRotate] pages=',total,'| Tesseract loaded?',typeof Tesseract!=='undefined','| apiKey?',!!S.apiKey);
+  showProgress('Auto-Roter dokument',0,total);
+  let worker=null;
+  try{ worker=await getTessWorker(); }catch(e){ hideProgress(); console.error('[autoRotate] OCR init failed',e); toast('OCR fejl: '+e.message,true); return; }
+  if(!worker && !S.apiKey){ hideProgress(); console.error('[autoRotate] no OCR worker'); toast('OCR kunne ikke starte — genindlæs siden',true); return; }
+  console.log('[autoRotate] OCR worker ready, starting page loop');
   if(!f.pageRotations)f.pageRotations={};
   let changed=0;
   for(let pg=1;pg<=total;pg++){
@@ -2244,6 +2247,7 @@ async function autoRotateAllPages(){
       await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
       const result=await runTesseract(off);
       const rotation=detectRotationFromWords(result.words,off.width,off.height);
+      console.log('[autoRotate] page',pg,'detected rotation:',rotation,'words:',(result.words||[]).length);
       if(rotation){
         const before=(f.pageRotations[pg]||0);
         if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,pg,rotation,before); }catch(e){ console.error('remap',e); } }
