@@ -2260,6 +2260,7 @@ async function autoRotateAllPages(){
     }catch(e){ if(window.LA&&LA.DEBUG)console.warn('autoRotateAllPages page',pg,e); }
   }
   hideProgress(); renderFileList();
+  if(typeof laClearAiBadge==='function') laClearAiBadge();
   if(S.activeIdx>=0) await renderPage();
   toast(changed?('Roteret '+changed+' side(r) ✓'):'Alle sider var korrekt orienteret ✓','ok');
 }
@@ -3552,7 +3553,7 @@ async function getOsdWorker(){
 }
 
 // Detect how many degrees a page canvas must be rotated CLOCKWISE to be upright.
-// Returns 0, 90, 180, or 270. Uses Tesseract OSD; falls back to bbox heuristic.
+// Returns 0, 90, 180, or 270, or null to signal "use fallback".
 async function detectPageOrientation(canvas){
   try{
     const w=await getOsdWorker();
@@ -3562,16 +3563,27 @@ async function detectPageOrientation(canvas){
     const conf = d.orientation_confidence;
     if(window.LA && LA.DEBUG) console.log('[OSD] orientation_degrees:',deg,'confidence:',conf);
     if(typeof deg==='number' && !isNaN(deg)){
-      // Tesseract reports how many degrees the text is rotated; the correction
-      // (clockwise rotation to make it upright) is (360 - deg) % 360.
       const correction = ((360 - deg) % 360 + 360) % 360;
-      // Require a little confidence to avoid spurious flips on sparse pages
-      if(conf==null || conf>=1) return correction;
-      return correction; // OSD with any reading is still better than the heuristic
+      // Tesseract OSD confidence: real signal is usually > ~1. Anything lower is
+      // noise on sparse/ambiguous pages — don't rotate on a guess.
+      const MIN_CONF = 1.0;
+      if(correction===0) return 0;
+      if(conf!=null && conf < MIN_CONF){
+        if(window.LA && LA.DEBUG) console.log('[OSD] confidence too low ('+conf.toFixed(2)+') — treating as upright');
+        return 0;
+      }
+      return correction;
     }
   }catch(e){ if(window.LA && LA.DEBUG) console.warn('[OSD] detect failed, falling back',e); }
-  return null; // signal caller to fall back
+  return null;
 }
+
+// Clear the little AI/OCR status badge spinner.
+function laClearAiBadge(){
+  const badge=document.getElementById('ai-ready-badge');
+  if(badge){ badge.className='ready'; badge.innerHTML='✓ Klar'; badge.style.opacity='1'; setTimeout(()=>{ badge.style.opacity='0'; setTimeout(()=>{badge.style.display='none';},500); },1200); }
+}
+
 
 
 // Enhanced file badges — BM + OCR + Rotation status
@@ -5055,12 +5067,14 @@ async function laSyncLayerSize(){
 function laApplyToolMode(){
   const c=LA.canvas; if(!c) return;
   const live=laIsTool(S.tool);
-  // When a live tool or selection is active we capture pointer; otherwise pass through.
-  const cap = live || c.getActiveObject() || (laCurrentList().length>0 && S.tool==='select');
+  // Capture pointer whenever a tool is active OR there are objects to interact with.
+  const cap = live || c.getActiveObject() || laCurrentList().length>0;
   c.wrapperEl.style.pointerEvents = (S.activeIdx>=0 && cap)?'auto':'none';
   c.defaultCursor = live?'crosshair':'default';
-  c.selection = (S.tool==='select');
-  c.forEachObject(o=>{ o.selectable = (S.tool==='select'); o.evented = (S.tool==='select'); });
+  // Always allow selection of existing objects, even while a drawing tool is active
+  // (pdf-editor.ai behaviour: click an existing object to grab it, draw on empty space).
+  c.selection = true;
+  c.forEachObject(o=>{ o.selectable = true; o.evented = true; });
   c.requestRenderAll();
 }
 
@@ -5231,8 +5245,10 @@ function laMakeLine(x1,y1,x2,y2,st,arrow){
 let _laDraw=null;
 function laMouseDown(opt){
   const c=LA.canvas;
-  if(!laIsTool(S.tool)) return;           // select handled by fabric natively
-  if(c.getActiveObject() && opt.target) return;
+  // If the click landed on an existing object (or a selection control), let Fabric
+  // handle moving/resizing/rotating it — even while a drawing tool is active.
+  if(opt.target) return;
+  if(!laIsTool(S.tool)) return;           // empty space + select tool: nothing to draw
   const p=c.getScenePoint(opt.e);
   const st=laStyleFor();
   let obj;
