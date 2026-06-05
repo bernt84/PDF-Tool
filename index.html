@@ -454,6 +454,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 .la-popup .la-row.on{background:#eef2ff;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/fabric@6.4.3/dist/index.js"></script>
 
 </head>
 <body>
@@ -1562,8 +1563,9 @@ function setTool(t){
     else if(t==='highlight') av.style.cursor='crosshair';
     else av.style.cursor='crosshair';
   }
-  // The LiveAnno layer owns these tools; deselect any live object when switching.
-  if(typeof laSyncLayerSize==='function'){ if(typeof laDeselect==='function')laDeselect(); laSyncLayerSize(); }
+  // The Fabric annotation engine owns these tools; switch its mode accordingly.
+  if(typeof laDeselect==='function' && t!=='select') laDeselect();
+  if(typeof laApplyToolMode==='function') laApplyToolMode();
   if(t==='redact')switchRT('anno');
   const names={select:'↖ Vælg',highlight:'▮ Fremhæv',redact:'█ Overstreg',pen:'✏ Pen',text:'T Tekst',rect:'□ Kasse',circle:'○ Cirkel',line:'╱ Linje',arrow:'→ Pil'};
   const ind=document.getElementById('mb-tool-lbl');if(ind)ind.textContent=names[t]||t;
@@ -2710,13 +2712,15 @@ function laHeadPath(page,tipX,tipY,angle,kind,size,color,opacity,thickness){
   // angle points along the line toward the tip
   const back=angle+Math.PI;
   const wing=size;
+  const H=page.getHeight();
+  const fy=(y)=>H-y;   // flip to y-down for drawSvgPath(anchor y:H)
   if(kind==='triangle'||kind==='chevron'){
     const a1=back+0.42, a2=back-0.42;
     const p1={x:tipX+Math.cos(a1)*wing, y:tipY+Math.sin(a1)*wing};
     const p2={x:tipX+Math.cos(a2)*wing, y:tipY+Math.sin(a2)*wing};
     if(kind==='triangle'){
-      const d=`M ${tipX} ${tipY} L ${p1.x} ${p1.y} L ${p2.x} ${p2.y} Z`;
-      page.drawSvgPath(d,{x:0,y:page.getHeight(),color,opacity,scale:1});
+      const d=`M ${tipX} ${fy(tipY)} L ${p1.x} ${fy(p1.y)} L ${p2.x} ${fy(p2.y)} Z`;
+      page.drawSvgPath(d,{x:0,y:H,color,opacity,scale:1});
     } else {
       page.drawLine({start:{x:p1.x,y:p1.y},end:{x:tipX,y:tipY},thickness,color,opacity});
       page.drawLine({start:{x:p2.x,y:p2.y},end:{x:tipX,y:tipY},thickness,color,opacity});
@@ -2727,8 +2731,8 @@ function laHeadPath(page,tipX,tipY,angle,kind,size,color,opacity,thickness){
     const s=wing*0.7; page.drawRectangle({x:tipX-s/2,y:tipY-s/2,width:s,height:s,color,opacity,borderWidth:0});
   } else if(kind==='diamond'){
     const s=wing*0.6;
-    const d=`M ${tipX} ${tipY-s} L ${tipX+s} ${tipY} L ${tipX} ${tipY+s} L ${tipX-s} ${tipY} Z`;
-    page.drawSvgPath(d,{x:0,y:page.getHeight(),color,opacity,scale:1});
+    const d=`M ${tipX} ${fy(tipY-s)} L ${tipX+s} ${fy(tipY)} L ${tipX} ${fy(tipY+s)} L ${tipX-s} ${fy(tipY)} Z`;
+    page.drawSvgPath(d,{x:0,y:H,color,opacity,scale:1});
   }
 }
 async function bakeLiveAnno(doc,page,a,pW,pH){
@@ -2736,32 +2740,33 @@ async function bakeLiveAnno(doc,page,a,pW,pH){
   const opacity = a.opacity!=null?a.opacity:1;
   const th = a.strokeSize||3;
   const dashArray = laDashPattern(a);
-  const deg = -(a.rot||0);
-  const rad = deg*Math.PI/180;
-  function anchorAboutCenter(blX, blY, w, h){
-    const cx = blX + w/2, cy = blY + h/2;
-    const dx = blX - cx, dy = blY - cy;
-    const rx = dx*Math.cos(rad) - dy*Math.sin(rad);
-    const ry = dx*Math.sin(rad) + dy*Math.cos(rad);
-    return { x: cx + rx, y: cy + ry };
+  const pageH = page.getHeight();
+  // Build an SVG path string from PDF-space points. drawSvgPath uses a top-left
+  // origin with y-down, so we flip y: svgY = pageH - pdfY.
+  function svgPathFromPts(pts, closed){
+    if(!pts||!pts.length) return '';
+    let d='M '+pts[0][0]+' '+(pageH-pts[0][1]);
+    for(let i=1;i<pts.length;i++) d+=' L '+pts[i][0]+' '+(pageH-pts[i][1]);
+    if(closed!==false) d+=' Z';
+    return d;
+  }
+  if(a.type==='polyfill'){            // highlight (filled polygon)
+    const d=svgPathFromPts(a._pts,true);
+    try{ page.drawSvgPath(d,{x:0,y:pageH,color,opacity,borderWidth:0}); }catch(e){ if(LA&&LA.DEBUG)console.error('polyfill',e); }
+    return;
+  }
+  if(a.type==='polystroke'){          // rect outline or ellipse (stroked polygon)
+    const d=svgPathFromPts(a._pts,true);
+    try{ page.drawSvgPath(d,{x:0,y:pageH,borderColor:color,borderWidth:th,borderDashArray:dashArray,opacity}); }catch(e){ if(LA&&LA.DEBUG)console.error('polystroke',e); }
+    return;
   }
   if(a.type==='text'){
     if(!a.text) return;
     const font=await laFontFor(doc,a);
     const fs=a.fontSize||18;
     const lines=String(a.text).split('\n');
-    if(!a.rot){
-      lines.forEach((ln,li)=>{ try{ page.drawText(ln,{x:a._px,y:a._py-(li+1)*fs*1.02,size:fs,font,color,opacity}); }catch(e){} });
-    } else {
-      let maxW=0; lines.forEach(ln=>{ try{ maxW=Math.max(maxW,font.widthOfTextAtSize(ln,fs)); }catch(e){ maxW=Math.max(maxW,ln.length*fs*0.5); } });
-      const boxH=lines.length*fs*1.02;
-      const blX=a._px, blY=a._py-boxH;
-      lines.forEach((ln,li)=>{
-        const lx=blX, ly=a._py-(li+1)*fs*1.02;
-        const an=anchorAboutCenterFor(blX,blY,maxW,boxH,lx,ly,rad);
-        try{ page.drawText(ln,{x:an.x,y:an.y,size:fs,font,color,opacity,rotate:PDFLib.degrees(deg)}); }catch(e){}
-      });
-    }
+    const deg = -(a.rot||0);
+    lines.forEach((ln,li)=>{ try{ page.drawText(ln,{x:a._px,y:a._py-(li+1)*fs*1.02,size:fs,font,color,opacity,rotate:a.rot?PDFLib.degrees(deg):undefined}); }catch(e){} });
     return;
   }
   if(a.type==='line'||a.type==='arrow'){
@@ -2774,32 +2779,6 @@ async function bakeLiveAnno(doc,page,a,pW,pH){
     if(a.headStart&&a.headStart!=='none') laHeadPath(page,x1,y1,angStart,a.headStart,hsz,color,opacity,th);
     return;
   }
-  const x=a._px, topY=a._py, w=a._pw, h=a._ph;
-  const bottomY=topY-h;
-  const anchor = a.rot ? anchorAboutCenter(x,bottomY,w,h) : {x:x,y:bottomY};
-  const rotOpt = a.rot ? { rotate: PDFLib.degrees(deg) } : {};
-  if(a.type==='highlight'){
-    page.drawRectangle(Object.assign({x:anchor.x,y:anchor.y,width:Math.max(1,w),height:Math.max(1,h),color,opacity:(a.opacity!=null?a.opacity:0.32),borderWidth:0},rotOpt));
-  } else if(a.type==='rect'){
-    page.drawRectangle(Object.assign({x:anchor.x,y:anchor.y,width:Math.max(1,w),height:Math.max(1,h),borderColor:color,borderWidth:th,opacity,color:undefined},rotOpt));
-  } else if(a.type==='circle'){
-    page.drawEllipse(Object.assign({x:x+w/2,y:bottomY+h/2,xScale:w/2,yScale:h/2,borderColor:color,borderWidth:th,opacity,color:undefined}, a.rot?{rotate:PDFLib.degrees(deg)}:{}));
-  }
-}
-function anchorAboutCenterFor(blX,blY,w,h,lx,ly,rad){
-  const cx=blX+w/2, cy=blY+h/2;
-  const dx=lx-cx, dy=ly-cy;
-  const rx=dx*Math.cos(rad)-dy*Math.sin(rad);
-  const ry=dx*Math.sin(rad)+dy*Math.cos(rad);
-  return { x:cx+rx, y:cy+ry };
-}
-// Rotate a per-line anchor (lx,ly) about the text block's center.
-function anchorAboutCenterFor(blX,blY,w,h,lx,ly,rad){
-  const cx=blX+w/2, cy=blY+h/2;
-  const dx=lx-cx, dy=ly-cy;
-  const rx=dx*Math.cos(rad)-dy*Math.sin(rad);
-  const ry=dx*Math.sin(rad)+dy*Math.cos(rad);
-  return { x:cx+rx, y:cy+ry };
 }
 
 async function bakeAnnotations(doc,fileIdx){
@@ -4911,560 +4890,426 @@ async function extractText() {
 
 </script>
 <script>
-/* === LiveAnno module (injected) === */
+/* === Fabric annotation engine (injected) === */
 // ============================================================================
-// LIVE ANNOTATION LAYER  (pdf-editor.ai-style live objects)
-// Self-contained module. Objects live as DOM/SVG until download, then are
-// converted into the existing S.annos shape and baked by bakeAnnotations().
-// Coordinates are stored in PDF POINTS (resolution/zoom independent).
+// FABRIC ANNOTATION ENGINE  (replaces the hand-rolled DOM overlay)
+// One coordinate space (the Fabric canvas, sized = pdf.js render). On download
+// each object is converted to PDF points via the SAME pdf.js viewport, then
+// handed to bakeLiveAnno(). Rotation of page AND object is handled correctly
+// because there is a single conversion path.
 // ============================================================================
 const LA = {
-  objects: {},          // objects[fileIdx][page] = [ {..pdf-space..} ]
-  selected: null,
-  drawing: null,
-  drag: null,
-  layer: null,
-  _seq: 0,
+  canvas: null,          // fabric.Canvas
+  objectsByPage: {},     // objectsByPage[fileIdx][page] = [serialized fabric objs]
+  _vp: null,             // pdf.js viewport used for the current render (scale=zoom)
+  _canvasVp: null, _canvasDpr: 1,
+  _loading: false,
+  _flushed: null,
   COLORS: ['#2563eb','#dc2626','#16a34a','#f59e0b','#7c3aed','#0891b2','#000000','#eab308'],
   HEADS: [['none','Ingen'],['triangle','Trekant'],['chevron','Chevron'],['circle','Cirkel'],['square','Firkant'],['diamond','Diamant']],
-  DASHES: [['solid','Hel','ti-minus'],['dashed','Stiplet','ti-line-dashed'],['dotted','Punkteret','ti-line-dotted']],
-  FONTS: [['Helvetica','Helvetica, Arial, sans-serif'],['Times','\'Times New Roman\', Times, serif'],['Courier','\'Courier New\', Courier, monospace']],
+  DASHES: [['solid','Hel'],['dashed','Stiplet'],['dotted','Punkteret']],
+  FONTS: ['Helvetica','Times','Courier'],
+  FONT_CSS: { Helvetica:'Helvetica, Arial, sans-serif', Times:'"Times New Roman", Times, serif', Courier:'"Courier New", Courier, monospace' },
   TOOLS: ['rect','circle','text','arrow','line','highlight'],
-  DEBUG: false,   // sæt LA.DEBUG=true i konsollen for at se diagnostik
+  DEBUG: false,
 };
+function laIsTool(t){ return LA.TOOLS.indexOf(t)>=0; }
 
-function laIsLine(o){ return o.type==='arrow' || o.type==='line'; }
-function laUid(){ return 'la'+(++LA._seq)+Math.random().toString(36).slice(2,6); }
-function laIsTool(t){ return LA.TOOLS.indexOf(t) >= 0; }
-
-function laGetObjs(fi, pg){
-  if(fi==null) fi = S.activeIdx;
-  if(pg==null) pg = S.page;
-  if(!LA.objects[fi]) LA.objects[fi] = {};
-  if(!LA.objects[fi][pg]) LA.objects[fi][pg] = [];
-  return LA.objects[fi][pg];
-}
-
-// ---- PDF <-> screen helpers -------------------------------------------------
-// We need the current viewport so we can place pdf-point objects on the CSS-pixel layer.
-function laViewport(){
-  const f = S.files[S.activeIdx];
-  if(!f || !f.pdfJsDoc) return null;
-  const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
-  return { rot:(S.rotation+pageRot)%360, zoom:S.zoom, pageRot };
-}
-// Convert a screen (CSS px relative to layer) point -> PDF point, using pdf.js viewport.
-function laScreenToPdf(cssX, cssY){
-  const f = S.files[S.activeIdx];
-  const vpObj = LA._vp;            // cached pdf.js viewport at scale=zoom (dpr=1)
-  if(!vpObj) return [cssX, cssY];
-  const p = vpObj.convertToPdfPoint(cssX, cssY);
-  return [p[0], p[1]];
-}
-function laPdfToScreen(pdfX, pdfY){
-  const vpObj = LA._vp;
-  if(!vpObj) return [pdfX, pdfY];
-  const p = vpObj.convertToViewportPoint(pdfX, pdfY);
-  return [p[0], p[1]];
-}
-
-// Refresh the cached pdf.js viewport (scale = zoom, dpr ignored so layer uses CSS px).
-async function laRefreshViewport(){
-  const f = S.files[S.activeIdx];
-  if(!f || !f.pdfJsDoc){ LA._vp=null; return; }
-  // Prefer the EXACT viewport renderPage used for the canvas, re-scaled from
-  // device pixels to CSS pixels (divide by dpr). This guarantees the live layer
-  // maps coordinates identically to the rendered page, including after rotation.
-  if(LA._canvasVp){
-    const dpr = LA._canvasDpr || window.devicePixelRatio || 1;
-    try { LA._vp = LA._canvasVp.clone({ scale: S.zoom });
-      if(LA.DEBUG) console.log('[LA] viewport via clone — rot:',LA._vp.rotation,'scale:',LA._vp.scale,'size:',Math.round(LA._vp.width),'x',Math.round(LA._vp.height),'S.rotation:',S.rotation);
-      return; }
-    catch(e){ if(LA.DEBUG)console.warn('[LA] clone failed, fallback',e); }
+// ---- Layer + Fabric canvas lifecycle ---------------------------------------
+function laEnsureCanvas(){
+  if(LA.canvas) return LA.canvas;
+  const sizer=document.getElementById('cv-sizer'); if(!sizer) return null;
+  let host=document.getElementById('la-fabric'); 
+  if(!host){
+    host=document.createElement('canvas'); host.id='la-fabric';
+    host.style.cssText='position:absolute;top:0;left:0;z-index:46;';
+    sizer.appendChild(host);
   }
-  const page = await f.pdfJsDoc.getPage(S.page);
-  const pageRot = (f.pageRotations && f.pageRotations[S.page]) || 0;
-  LA._vp = page.getViewport({ scale:S.zoom, rotation:(S.rotation+pageRot)%360 });
-  if(LA.DEBUG) console.log('[LA] viewport via getViewport — rot:',(S.rotation+pageRot)%360,'scale:',S.zoom,'pageRot:',pageRot);
-}
-
-// ---- Layer lifecycle --------------------------------------------------------
-function laEnsureLayer(){
-  let layer = document.getElementById('live-anno-layer');
-  if(!layer){
-    const sizer = document.getElementById('cv-sizer');
-    if(!sizer) return null;
-    layer = document.createElement('div');
-    layer.id = 'live-anno-layer';
-    layer.style.cssText = 'position:absolute;top:0;left:0;z-index:46;';
-    sizer.appendChild(layer);
-    layer.addEventListener('mousedown', laOnDown);
-  }
-  LA.layer = layer;
-  return layer;
-}
-
-function laSyncLayerSize(){
-  const layer = laEnsureLayer();
-  if(!layer) return;
-  const av = document.getElementById('anno-canvas');
-  const w = av ? parseFloat(av.style.width) : 0;
-  const h = av ? parseFloat(av.style.height) : 0;
-  layer.style.width = w + 'px';
-  layer.style.height = h + 'px';
-  // Capture pointer for live tools, or in select mode when this page has live
-  // objects (so they can be selected). For legacy tools (pen/redact) and select
-  // on pages without live objects, let events pass through to the canvas.
-  const hasObjs = (LA.objects[S.activeIdx] && LA.objects[S.activeIdx][S.page] && LA.objects[S.activeIdx][S.page].length>0);
-  const capture = laIsTool(S.tool) || LA.selected || (S.tool==='select' && hasObjs);
-  layer.style.pointerEvents = (S.activeIdx>=0 && capture) ? 'auto' : 'none';
-  layer.style.cursor = (S.tool==='select') ? 'default' : (laIsTool(S.tool) ? 'crosshair' : 'default');
-}
-
-// Called from renderPage after the canvas is sized.
-async function laRenderPage(){
-  await laRefreshViewport();
-  laSyncLayerSize();
-  const layer = LA.layer;
-  if(!layer) return;
-  layer.innerHTML = '';
-  LA.selected = null;
-  const objs = laGetObjs();
-  objs.forEach(o => { laBuildEl(o); laRenderObj(o); });
-}
-
-// ---- Object element creation ------------------------------------------------
-function laBuildEl(o){
-  const el = document.createElement('div');
-  el.className = 'la-obj';
-  el.dataset.id = o.id;
-  el.style.position = 'absolute';
-  el.style.boxSizing = 'border-box';
-  o._el = el;
-  LA.layer.appendChild(el);
-  return el;
-}
-
-function laDash(o){
-  const s = (o.stroke||3) * S.zoom;
-  if(o.dash==='dashed') return (s*3)+' '+(s*2.2);
-  if(o.dash==='dotted') return '1 '+(s*2);
-  return '';
-}
-
-function laRenderObj(o){
-  if(!o._el) laBuildEl(o);
-  const el = o._el;
-  if(laIsLine(o)){ laRenderLine(o); if(LA.selected===o) laLineChrome(o); return; }
-
-  // shape / text: convert pdf rect -> screen rect
-  const [sx, sy] = laPdfToScreen(o.x, o.y);          // top-left in pdf space stored as x,y (top-left visually)
-  const sw = o.w * S.zoom, sh = o.h * S.zoom;
-  el.style.left = sx + 'px';
-  el.style.top = sy + 'px';
-  el.style.transform = 'rotate('+(o.rot||0)+'deg)';
-  el.style.transformOrigin = 'center center';
-  el.style.cursor = 'move';
-  el.innerHTML = '';
-  const ds = ({solid:'solid',dashed:'dashed',dotted:'dotted'})[o.dash||'solid'];
-  const stroke = Math.max(1,(o.stroke||3)*S.zoom);
-
-  if(o.type==='text'){
-    el.style.width='auto'; el.style.height='auto'; el.style.border='none'; el.style.background='transparent';
-    const t=document.createElement('div'); t.className='la-txt'; t.contentEditable=(LA.selected===o);
-    t.textContent=o.text||'Tekst';
-    t.style.color=o.color;
-    t.style.fontSize=((o.fontSize||18)*S.zoom)+'px';
-    const ff=LA.FONTS.find(x=>x[0]===(o.font||'Helvetica')); t.style.fontFamily=ff?ff[1]:LA.FONTS[0][1];
-    t.style.fontWeight=o.bold?'700':'400';
-    t.style.fontStyle=o.italic?'italic':'normal';
-    t.style.whiteSpace='nowrap'; t.style.lineHeight='1.15'; t.style.outline='none'; t.style.padding='1px';
-    t.onblur=()=>{ o.text=t.textContent; };
-    el.appendChild(t);
-  } else {
-    el.style.width=sw+'px'; el.style.height=sh+'px';
-    if(o.type==='rect'){ el.style.border=stroke+'px '+ds+' '+o.color; el.style.borderRadius='2px'; el.style.background='transparent'; }
-    else if(o.type==='circle'){ el.style.border=stroke+'px '+ds+' '+o.color; el.style.borderRadius='50%'; el.style.background='transparent'; }
-    else if(o.type==='highlight'){ el.style.background=o.color; el.style.opacity=(o.opacity||0.32); el.style.border='none'; }
-  }
-  if(LA.selected===o) laShapeChrome(o);
-}
-
-function laRenderLine(o){
-  const el=o._el;
-  const [sx1,sy1]=laPdfToScreen(o.x1,o.y1);
-  const [sx2,sy2]=laPdfToScreen(o.x2,o.y2);
-  const pad=24;
-  const minX=Math.min(sx1,sx2)-pad, minY=Math.min(sy1,sy2)-pad;
-  const w=Math.abs(sx2-sx1)+pad*2, h=Math.abs(sy2-sy1)+pad*2;
-  el.style.left=minX+'px'; el.style.top=minY+'px'; el.style.width=w+'px'; el.style.height=h+'px';
-  el.style.transform='none'; el.style.border='none'; el.style.background='transparent'; el.style.cursor='move'; el.innerHTML='';
-  const ns='http://www.w3.org/2000/svg';
-  const svg=document.createElementNS(ns,'svg'); svg.setAttribute('width','100%'); svg.setAttribute('height','100%'); svg.style.overflow='visible';
-  const defs=document.createElementNS(ns,'defs');
-  function marker(id,kind,end){
-    const m=document.createElementNS(ns,'marker'); m.setAttribute('id',id); m.setAttribute('markerWidth','12'); m.setAttribute('markerHeight','12'); m.setAttribute('refX',end?'8':'2'); m.setAttribute('refY','5'); m.setAttribute('orient','auto'); m.setAttribute('markerUnits','userSpaceOnUse');
-    let s; const c=o.color;
-    if(kind==='triangle'){ s=document.createElementNS(ns,'path'); s.setAttribute('d',end?'M0,1 L9,5 L0,9 Z':'M9,1 L0,5 L9,9 Z'); s.setAttribute('fill',c); }
-    else if(kind==='chevron'){ s=document.createElementNS(ns,'path'); s.setAttribute('d',end?'M0,1 L9,5 L0,9':'M9,1 L0,5 L9,9'); s.setAttribute('fill','none'); s.setAttribute('stroke',c); s.setAttribute('stroke-width','1.6'); }
-    else if(kind==='circle'){ s=document.createElementNS(ns,'circle'); s.setAttribute('cx','5'); s.setAttribute('cy','5'); s.setAttribute('r','3.4'); s.setAttribute('fill',c); }
-    else if(kind==='square'){ s=document.createElementNS(ns,'rect'); s.setAttribute('x','2'); s.setAttribute('y','2'); s.setAttribute('width','6'); s.setAttribute('height','6'); s.setAttribute('fill',c); }
-    else if(kind==='diamond'){ s=document.createElementNS(ns,'path'); s.setAttribute('d','M5,1 L9,5 L5,9 L1,5 Z'); s.setAttribute('fill',c); }
-    if(s)m.appendChild(s); return m;
-  }
-  const idE='laE-'+o.id, idS='laS-'+o.id;
-  const he=o.headEnd||'none', hs=o.headStart||'none';
-  if(he!=='none')defs.appendChild(marker(idE,he,true));
-  if(hs!=='none')defs.appendChild(marker(idS,hs,false));
-  svg.appendChild(defs);
-  const lx1=sx1-minX, ly1=sy1-minY, lx2=sx2-minX, ly2=sy2-minY;
-  const hit=document.createElementNS(ns,'line'); hit.setAttribute('x1',lx1); hit.setAttribute('y1',ly1); hit.setAttribute('x2',lx2); hit.setAttribute('y2',ly2); hit.setAttribute('stroke','transparent'); hit.setAttribute('stroke-width','16'); svg.appendChild(hit);
-  const ln=document.createElementNS(ns,'line'); ln.setAttribute('x1',lx1); ln.setAttribute('y1',ly1); ln.setAttribute('x2',lx2); ln.setAttribute('y2',ly2); ln.setAttribute('stroke',o.color); ln.setAttribute('stroke-width',Math.max(1,(o.stroke||3)*S.zoom)); ln.setAttribute('stroke-linecap','round');
-  const da=laDash(o); if(da)ln.setAttribute('stroke-dasharray',da);
-  if(he!=='none')ln.setAttribute('marker-end','url(#'+idE+')');
-  if(hs!=='none')ln.setAttribute('marker-start','url(#'+idS+')');
-  svg.appendChild(ln); el.appendChild(svg);
-}
-
-// ---- Selection chrome -------------------------------------------------------
-function laClearChrome(){
-  if(LA.layer) LA.layer.querySelectorAll('.la-bar,.la-selbox,.la-handle,.la-rotstem,.la-popup').forEach(e=>e.remove());
-}
-
-function laShapeChrome(o){
-  laClearChrome();
-  const box=document.createElement('div'); box.className='la-selbox'; o._el.appendChild(box);
-  if(o.type!=='text'){
-    [['nw',0,0],['n',.5,0],['ne',1,0],['e',1,.5],['se',1,1],['s',.5,1],['sw',0,1],['w',0,.5]].forEach(([d,fx,fy])=>{
-      const h=document.createElement('div'); h.className='la-handle'; h.style.left='calc('+(fx*100)+'% - 6px)'; h.style.top='calc('+(fy*100)+'% - 6px)';
-      h.style.cursor=(d==='n'||d==='s')?'ns-resize':(d==='e'||d==='w')?'ew-resize':(d==='nw'||d==='se')?'nwse-resize':'nesw-resize';
-      h.onmousedown=(e)=>laStartResize(e,o,d); o._el.appendChild(h);
-    });
-  }
-  const stem=document.createElement('div'); stem.className='la-rotstem'; o._el.appendChild(stem);
-  const rh=document.createElement('div'); rh.className='la-handle la-rot'; rh.title='Roter'; rh.onmousedown=(e)=>laStartRotate(e,o); o._el.appendChild(rh);
-  laBuildBar(o);
-}
-
-function laLineChrome(o){
-  laClearChrome();
-  const [sx1,sy1]=laPdfToScreen(o.x1,o.y1);
-  const [sx2,sy2]=laPdfToScreen(o.x2,o.y2);
-  const pad=24; const minX=Math.min(sx1,sx2)-pad, minY=Math.min(sy1,sy2)-pad;
-  [['p1',sx1-minX,sy1-minY],['p2',sx2-minX,sy2-minY]].forEach(([which,hx,hy])=>{
-    const h=document.createElement('div'); h.className='la-handle la-endpt'; h.style.left=(hx-7)+'px'; h.style.top=(hy-7)+'px'; h.style.cursor='grab'; h.title='Træk endepunkt';
-    h.onmousedown=(e)=>laStartEndpoint(e,o,which); o._el.appendChild(h);
+  LA.canvas=new fabric.Canvas(host,{ selection:true, preserveObjectStacking:true, enableRetinaScaling:false });
+  // Fabric wraps the canvas in div.canvas-container; pin it over the PDF.
+  if(LA.canvas.wrapperEl){ LA.canvas.wrapperEl.style.position='absolute'; LA.canvas.wrapperEl.style.top='0'; LA.canvas.wrapperEl.style.left='0'; LA.canvas.wrapperEl.style.zIndex='46'; }
+  // shared control styling
+  fabric.InteractiveFabricObject.ownDefaults = Object.assign({}, fabric.InteractiveFabricObject.ownDefaults, {
+    cornerColor:'#fff', cornerStrokeColor:'#2563eb', borderColor:'#2563eb',
+    cornerStyle:'circle', cornerSize:11, transparentCorners:false, padding:2
   });
-  laBuildBar(o);
+  laWireCanvasEvents();
+  return LA.canvas;
 }
 
-// ---- Floating toolbar -------------------------------------------------------
-function laBuildBar(o){
-  const bar=document.createElement('div'); bar.className='la-bar';
-  LA.COLORS.forEach(c=>{ const sw=document.createElement('div'); sw.className='la-sw'+(c===o.color?' on':''); sw.style.background=c; sw.title='Farve'; sw.onmousedown=(e)=>e.stopPropagation(); sw.onclick=()=>{o.color=c; laRenderObj(o);}; bar.appendChild(sw); });
+function laWireCanvasEvents(){
+  const c=LA.canvas;
+  c.on('mouse:down', laMouseDown);
+  c.on('mouse:move', laMouseMove);
+  c.on('mouse:up', laMouseUp);
+  c.on('selection:created', laOnSelect);
+  c.on('selection:updated', laOnSelect);
+  c.on('selection:cleared', ()=>laHideBar());
+  c.on('object:modified', ()=>{ laPersist(); laPositionBar(); });
+  c.on('object:moving', laPositionBar);
+  c.on('object:scaling', laPositionBar);
+  c.on('object:rotating', laPositionBar);
+  c.on('text:changed', ()=>laPersist());
+}
 
-  if(o.type==='text'){
-    bar.appendChild(laVline());
+// Resize the fabric canvas to match the pdf render (CSS px) and rebuild objects.
+async function laSyncLayerSize(){
+  const c=laEnsureCanvas(); if(!c) return;
+  const av=document.getElementById('anno-canvas');
+  const w=av?parseFloat(av.style.width):0, h=av?parseFloat(av.style.height):0;
+  c.setDimensions({width:w,height:h});
+  laApplyToolMode();
+}
+
+function laApplyToolMode(){
+  const c=LA.canvas; if(!c) return;
+  const live=laIsTool(S.tool);
+  // When a live tool or selection is active we capture pointer; otherwise pass through.
+  const cap = live || c.getActiveObject() || (laCurrentList().length>0 && S.tool==='select');
+  c.wrapperEl.style.pointerEvents = (S.activeIdx>=0 && cap)?'auto':'none';
+  c.defaultCursor = live?'crosshair':'default';
+  c.selection = (S.tool==='select');
+  c.forEachObject(o=>{ o.selectable = (S.tool==='select'); o.evented = (S.tool==='select'); });
+  c.requestRenderAll();
+}
+
+// ---- viewport conversion (single source of truth) --------------------------
+async function laRefreshViewport(){
+  const f=S.files[S.activeIdx];
+  if(!f||!f.pdfJsDoc){ LA._vp=null; return; }
+  if(LA._canvasVp){ try{ LA._vp=LA._canvasVp.clone({scale:S.zoom}); return; }catch(e){} }
+  const page=await f.pdfJsDoc.getPage(S.page);
+  const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+  LA._vp=page.getViewport({scale:S.zoom, rotation:(S.rotation+pageRot)%360});
+}
+function laScreenToPdf(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToPdfPoint(x,y); return [p[0],p[1]]; }
+function laPdfToScreen(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToViewportPoint(x,y); return [p[0],p[1]]; }
+
+// ---- persistence (serialize fabric objects per page) -----------------------
+function laCurrentList(){
+  if(!LA.objectsByPage[S.activeIdx]) LA.objectsByPage[S.activeIdx]={};
+  if(!LA.objectsByPage[S.activeIdx][S.page]) LA.objectsByPage[S.activeIdx][S.page]=[];
+  return LA.objectsByPage[S.activeIdx][S.page];
+}
+const LA_PROPS=['laType','laColor','laStroke','laDash','laOpacity','laFont','laBold','laItalic','laHeadStart','laHeadEnd','laText'];
+function laPersist(){
+  const c=LA.canvas; if(!c) return;
+  const arr=c.getObjects().map(o=>o.toObject(LA_PROPS));
+  LA.objectsByPage[S.activeIdx][S.page]=arr;
+}
+
+// Build/refresh the fabric canvas for the current page.
+async function laRenderPage(){
+  const c=laEnsureCanvas(); if(!c) return;
+  LA._loading=true;
+  await laRefreshViewport();
+  await laSyncLayerSize();
+  c.clear();
+  const list=laCurrentList();
+  if(list.length){
+    try{
+      const objs=await fabric.util.enlivenObjects(list);
+      objs.forEach(o=>{ laAttach(o); c.add(o); });
+    }catch(e){ if(LA.DEBUG)console.error('[LA] enliven',e); }
+  }
+  laApplyToolMode();
+  c.requestRenderAll();
+  laHideBar();
+  LA._loading=false;
+}
+
+// ---- creating objects ------------------------------------------------------
+function laStyleFor(){
+  return { color:S.color||'#2563eb', stroke:S.strokeSize||3, dash:'solid', font:'Helvetica', fontSize:S.fontSize||18 };
+}
+function laDashArr(dash,stroke){
+  const s=stroke||3;
+  if(dash==='dashed') return [s*3, s*2.2];
+  if(dash==='dotted') return [Math.max(0.5,s*0.1), s*2];
+  return null;
+}
+function laAttach(o){
+  // common metadata + control toggles based on type
+  if(o.laType==='line'||o.laType==='arrow'){
+    o.setControlsVisibility({mtr:true, ml:false,mr:false,mt:false,mb:false});
+  }
+  return o;
+}
+
+function laMakeRect(x,y,w,h,st,filled){
+  return new fabric.Rect({ left:x, top:y, width:w, height:h,
+    fill: filled?st.color:'transparent', stroke: filled?null:st.color,
+    strokeWidth: filled?0:st.stroke, strokeDashArray: filled?null:laDashArr(st.dash,st.stroke),
+    opacity: filled?(st.opacity||0.32):1, objectCaching:false,
+    laType: filled?'highlight':'rect', laColor:st.color, laStroke:st.stroke, laDash:st.dash, laOpacity: filled?(st.opacity||0.32):1 });
+}
+function laMakeEllipse(x,y,w,h,st){
+  return new fabric.Ellipse({ left:x, top:y, rx:Math.max(1,w/2), ry:Math.max(1,h/2),
+    fill:'transparent', stroke:st.color, strokeWidth:st.stroke, strokeDashArray:laDashArr(st.dash,st.stroke),
+    objectCaching:false, laType:'circle', laColor:st.color, laStroke:st.stroke, laDash:st.dash });
+}
+function laMakeText(x,y,st){
+  const t=new fabric.Textbox('Tekst',{ left:x, top:y, fontSize:st.fontSize, fill:st.color,
+    fontFamily:LA.FONT_CSS['Helvetica'], width:120, editable:true, objectCaching:false,
+    laType:'text', laColor:st.color, laFont:'Helvetica', laBold:false, laItalic:false });
+  return t;
+}
+function laMakeLine(x1,y1,x2,y2,st,arrow){
+  const ln=new fabric.Line([x1,y1,x2,y2],{ stroke:st.color, strokeWidth:st.stroke,
+    strokeDashArray:laDashArr(st.dash,st.stroke), objectCaching:false,
+    laType: arrow?'arrow':'line', laColor:st.color, laStroke:st.stroke, laDash:st.dash,
+    laHeadStart:'none', laHeadEnd: arrow?'triangle':'none' });
+  return ln;
+}
+
+// ---- pointer: draw new objects ---------------------------------------------
+let _laDraw=null;
+function laMouseDown(opt){
+  const c=LA.canvas;
+  if(!laIsTool(S.tool)) return;           // select handled by fabric natively
+  if(c.getActiveObject() && opt.target) return;
+  const p=c.getScenePoint(opt.e);
+  const st=laStyleFor();
+  let obj;
+  if(S.tool==='rect') obj=laMakeRect(p.x,p.y,1,1,st,false);
+  else if(S.tool==='highlight') { st.color=S.color||'#fde047'; st.opacity=0.32; obj=laMakeRect(p.x,p.y,1,1,st,true); }
+  else if(S.tool==='circle') obj=laMakeEllipse(p.x,p.y,1,1,st);
+  else if(S.tool==='line') obj=laMakeLine(p.x,p.y,p.x,p.y,st,false);
+  else if(S.tool==='arrow') obj=laMakeLine(p.x,p.y,p.x,p.y,st,true);
+  else if(S.tool==='text'){
+    obj=laMakeText(p.x,p.y,st); laAttach(obj); c.add(obj); c.setActiveObject(obj);
+    obj.enterEditing&&obj.enterEditing(); obj.selectAll&&obj.selectAll();
+    laPersist(); laApplyToolMode(); c.requestRenderAll(); return;
+  }
+  if(!obj) return;
+  laAttach(obj); c.add(obj);
+  _laDraw={obj, sx:p.x, sy:p.y, line:(S.tool==='line'||S.tool==='arrow')};
+}
+function laMouseMove(opt){
+  if(!_laDraw) return;
+  const c=LA.canvas; const p=c.getScenePoint(opt.e); const d=_laDraw;
+  if(d.line){ d.obj.set({x2:p.x,y2:p.y}); }
+  else if(d.obj.laType==='circle'){
+    const w=Math.abs(p.x-d.sx), h=Math.abs(p.y-d.sy);
+    d.obj.set({ left:Math.min(p.x,d.sx), top:Math.min(p.y,d.sy), rx:Math.max(1,w/2), ry:Math.max(1,h/2) });
+  } else {
+    d.obj.set({ left:Math.min(p.x,d.sx), top:Math.min(p.y,d.sy), width:Math.abs(p.x-d.sx), height:Math.abs(p.y-d.sy) });
+  }
+  d.obj.setCoords(); c.requestRenderAll();
+}
+function laMouseUp(){
+  if(!_laDraw) return;
+  const c=LA.canvas; const d=_laDraw; _laDraw=null;
+  let tooSmall=false;
+  if(d.line){ tooSmall=Math.hypot(d.obj.x2-d.obj.x1,d.obj.y2-d.obj.y1)<5; }
+  else { tooSmall=(d.obj.width||d.obj.rx*2)<4 && (d.obj.height||d.obj.ry*2)<4; }
+  if(tooSmall){ c.remove(d.obj); }
+  else { c.setActiveObject(d.obj); laPersist(); }
+  laApplyToolMode(); c.requestRenderAll();
+}
+
+// ---- selection + floating toolbar ------------------------------------------
+function laOnSelect(){ laBuildBar(); laPositionBar(); }
+function laActive(){ return LA.canvas?LA.canvas.getActiveObject():null; }
+
+function laHideBar(){ const b=document.getElementById('la-bar'); if(b)b.remove(); }
+function laBuildBar(){
+  laHideBar();
+  const o=laActive(); if(!o) return;
+  const sizer=document.getElementById('cv-sizer'); if(!sizer) return;
+  const bar=document.createElement('div'); bar.id='la-bar'; bar.className='la-bar';
+  const t=o.laType;
+  // colors
+  LA.COLORS.forEach(col=>{ const sw=document.createElement('div'); sw.className='la-sw'+(col===o.laColor?' on':''); sw.style.background=col; sw.title='Farve';
+    sw.onmousedown=e=>e.stopPropagation(); sw.onclick=()=>laSetColor(o,col); bar.appendChild(sw); });
+  if(t==='text'){
+    bar.appendChild(laV());
     const sel=document.createElement('select'); sel.className='la-sel'; sel.title='Skrifttype';
-    LA.FONTS.forEach(([name])=>{ const op=document.createElement('option'); op.value=name; op.textContent=name; if((o.font||'Helvetica')===name)op.selected=true; sel.appendChild(op); });
-    sel.onmousedown=(e)=>e.stopPropagation(); sel.onchange=()=>{o.font=sel.value; laRenderObj(o);}; bar.appendChild(sel);
-    bar.appendChild(laStepper(o,'fontSize',6,96,2,18,'Skriftstørrelse'));
-    bar.appendChild(laVline());
-    const bB=document.createElement('button'); bB.innerHTML='<i class="ti ti-bold"></i>'; bB.title='Fed'; bB.className=o.bold?'on':''; bB.onmousedown=(e)=>e.stopPropagation(); bB.onclick=()=>{o.bold=!o.bold; laRenderObj(o);}; bar.appendChild(bB);
-    const bI=document.createElement('button'); bI.innerHTML='<i class="ti ti-italic"></i>'; bI.title='Kursiv'; bI.className=o.italic?'on':''; bI.onmousedown=(e)=>e.stopPropagation(); bI.onclick=()=>{o.italic=!o.italic; laRenderObj(o);}; bar.appendChild(bI);
+    LA.FONTS.forEach(fn=>{ const op=document.createElement('option'); op.value=fn; op.textContent=fn; if((o.laFont||'Helvetica')===fn)op.selected=true; sel.appendChild(op); });
+    sel.onmousedown=e=>e.stopPropagation(); sel.onchange=()=>{ o.set({fontFamily:LA.FONT_CSS[sel.value]}); o.laFont=sel.value; LA.canvas.requestRenderAll(); laPersist(); }; bar.appendChild(sel);
+    bar.appendChild(laStep(()=>Math.round(o.fontSize),v=>{ o.set({fontSize:Math.max(6,Math.min(96,v))}); o.laFont=o.laFont; LA.canvas.requestRenderAll(); laPersist(); laPositionBar(); },2,'Skriftstørrelse'));
+    bar.appendChild(laV());
+    bar.appendChild(laToggle('ti-bold','Fed',()=>o.laBold,()=>{ o.laBold=!o.laBold; o.set({fontWeight:o.laBold?'bold':'normal'}); LA.canvas.requestRenderAll(); laPersist(); laBuildBar(); laPositionBar(); }));
+    bar.appendChild(laToggle('ti-italic','Kursiv',()=>o.laItalic,()=>{ o.laItalic=!o.laItalic; o.set({fontStyle:o.laItalic?'italic':'normal'}); LA.canvas.requestRenderAll(); laPersist(); laBuildBar(); laPositionBar(); }));
   }
-
-  if(o.type==='rect'||o.type==='circle'||laIsLine(o)){
-    bar.appendChild(laVline());
-    bar.appendChild(laStepper(o,'stroke',1,20,1,3,'Linjetykkelse'));
-    bar.appendChild(laVline());
-    LA.DASHES.forEach(([key,label,ic])=>{ const b=document.createElement('button'); b.innerHTML='<i class="ti '+ic+'"></i>'; b.className=(o.dash||'solid')===key?'on':''; b.title=label; b.onmousedown=(e)=>e.stopPropagation(); b.onclick=()=>{o.dash=key; laRenderObj(o);}; bar.appendChild(b); });
+  if(t==='rect'||t==='circle'||t==='line'||t==='arrow'){
+    bar.appendChild(laV());
+    bar.appendChild(laStep(()=>o.strokeWidth||o.laStroke||3,v=>{ const nv=Math.max(1,Math.min(20,v)); o.set({strokeWidth:nv, strokeDashArray:laDashArr(o.laDash,nv)}); o.laStroke=nv; LA.canvas.requestRenderAll(); laPersist(); laPositionBar(); },1,'Linjetykkelse'));
+    bar.appendChild(laV());
+    LA.DASHES.forEach(([key,label],i)=>{ const ic=['ti-minus','ti-line-dashed','ti-line-dotted'][i];
+      bar.appendChild(laToggle(ic,label,()=> (o.laDash||'solid')===key, ()=>{ o.laDash=key; o.set({strokeDashArray:laDashArr(key,o.strokeWidth)}); LA.canvas.requestRenderAll(); laPersist(); laBuildBar(); laPositionBar(); })); });
   }
-
-  if(o.type==='highlight'){
-    bar.appendChild(laVline());
-    bar.appendChild(laStepper(o,'opacity',1,10,1,Math.round((o.opacity||0.32)*10),'Gennemsigtighed',v=>v/10,v=>Math.round(v*10)));
+  if(t==='line'||t==='arrow'){
+    bar.appendChild(laV());
+    bar.appendChild(laBtn('ti-arrow-left','Pilehoved — start',(b)=>laHeadMenu(o,'start',b)));
+    bar.appendChild(laBtn('ti-arrow-right','Pilehoved — slut',(b)=>laHeadMenu(o,'end',b)));
+    bar.appendChild(laBtn('ti-arrows-exchange','Byt ender',()=>{ const s=o.laHeadStart; o.laHeadStart=o.laHeadEnd; o.laHeadEnd=s; LA.canvas.requestRenderAll(); laPersist(); }));
   }
+  bar.appendChild(laV());
+  bar.appendChild(laBtn('ti-copy','Dublér',()=>laDuplicate(o)));
+  const del=laBtn('ti-trash','Slet',()=>laDeleteActive()); del.style.color='#dc2626'; bar.appendChild(del);
+  sizer.appendChild(bar);
+}
+function laV(){ const v=document.createElement('div'); v.className='la-vline'; return v; }
+function laBtn(icon,title,fn){ const b=document.createElement('button'); b.innerHTML='<i class="ti '+icon+'"></i>'; b.title=title; b.onmousedown=e=>e.stopPropagation(); b.onclick=()=>fn(b); return b; }
+function laToggle(icon,title,isOn,fn){ const b=laBtn(icon,title,fn); if(isOn())b.classList.add('on'); return b; }
+function laStep(get,set,step,title){ const w=document.createElement('div'); w.className='la-stepper'; w.title=title;
+  const m=document.createElement('button'); m.innerHTML='<i class="ti ti-minus"></i>'; m.title='Mindre';
+  const n=document.createElement('b'); n.textContent=get();
+  const p=document.createElement('button'); p.innerHTML='<i class="ti ti-plus"></i>'; p.title='Større';
+  m.onmousedown=e=>e.stopPropagation(); p.onmousedown=e=>e.stopPropagation();
+  m.onclick=()=>{ set(get()-step); n.textContent=get(); }; p.onclick=()=>{ set(get()+step); n.textContent=get(); };
+  w.appendChild(m); w.appendChild(n); w.appendChild(p); return w; }
 
-  if(laIsLine(o)){
-    bar.appendChild(laVline());
-    const bs=document.createElement('button'); bs.innerHTML='<i class="ti ti-arrow-left"></i>'; bs.title='Pilehoved — start'; bs.onmousedown=(e)=>e.stopPropagation(); bs.onclick=(e)=>{e.stopPropagation(); laHeadPopup(o,'start',bs);}; bar.appendChild(bs);
-    const be=document.createElement('button'); be.innerHTML='<i class="ti ti-arrow-right"></i>'; be.title='Pilehoved — slut'; be.onmousedown=(e)=>e.stopPropagation(); be.onclick=(e)=>{e.stopPropagation(); laHeadPopup(o,'end',be);}; bar.appendChild(be);
-    const sw=document.createElement('button'); sw.innerHTML='<i class="ti ti-arrows-exchange"></i>'; sw.title='Byt ender'; sw.onmousedown=(e)=>e.stopPropagation(); sw.onclick=()=>{const t=o.headStart||'none'; o.headStart=o.headEnd||'none'; o.headEnd=t; laRenderObj(o);}; bar.appendChild(sw);
-  }
-
-  bar.appendChild(laVline());
-  const dup=document.createElement('button'); dup.innerHTML='<i class="ti ti-copy"></i>'; dup.title='Dublér'; dup.onmousedown=(e)=>e.stopPropagation(); dup.onclick=()=>{ laDuplicate(o); }; bar.appendChild(dup);
-  const del=document.createElement('button'); del.innerHTML='<i class="ti ti-trash"></i>'; del.style.color='#dc2626'; del.title='Slet'; del.onmousedown=(e)=>e.stopPropagation(); del.onclick=()=>{ laDelete(o); }; bar.appendChild(del);
-
-  LA.layer.appendChild(bar);
-  laPositionBar(o,bar);
+function laSetColor(o,col){
+  o.laColor=col;
+  if(o.laType==='highlight') o.set({fill:col});
+  else if(o.laType==='text') o.set({fill:col});
+  else o.set({stroke:col});
+  LA.canvas.requestRenderAll(); laPersist(); laBuildBar(); laPositionBar();
 }
 
-function laVline(){ const v=document.createElement('div'); v.className='la-vline'; return v; }
-
-function laStepper(o,prop,min,max,step,def,title,toVal,fromVal){
-  const wrap=document.createElement('div'); wrap.className='la-stepper'; wrap.title=title;
-  const get=()=> fromVal ? fromVal(o[prop]!=null?o[prop]:(toVal?toVal(def):def)) : (o[prop]!=null?o[prop]:def);
-  const minus=document.createElement('button'); minus.innerHTML='<i class="ti ti-minus"></i>'; minus.title='Mindre';
-  const num=document.createElement('b'); num.textContent=get();
-  const plus=document.createElement('button'); plus.innerHTML='<i class="ti ti-plus"></i>'; plus.title='Større';
-  minus.onmousedown=(e)=>e.stopPropagation(); plus.onmousedown=(e)=>e.stopPropagation();
-  function setRaw(disp){ const clamped=Math.max(min,Math.min(max,disp)); num.textContent=clamped; o[prop]= toVal ? toVal(clamped) : clamped; laRenderObj(o); const bar=LA.layer.querySelector('.la-bar'); if(bar)laPositionBar(o,bar); }
-  minus.onclick=()=>setRaw(parseFloat(num.textContent)-step);
-  plus.onclick=()=>setRaw(parseFloat(num.textContent)+step);
-  wrap.appendChild(minus); wrap.appendChild(num); wrap.appendChild(plus);
-  return wrap;
-}
-
-function laHeadPopup(o,which,anchor){
-  if(LA.layer) LA.layer.querySelectorAll('.la-popup').forEach(p=>p.remove());
+function laHeadMenu(o,which,anchor){
+  document.querySelectorAll('.la-popup').forEach(p=>p.remove());
+  const sizer=document.getElementById('cv-sizer');
   const pop=document.createElement('div'); pop.className='la-popup';
-  LA.HEADS.forEach(([key,label])=>{ const row=document.createElement('div'); row.className='la-row'+(((which==='end'?o.headEnd:o.headStart)||'none')===key?' on':''); row.innerHTML='<span style="flex:1">'+label+'</span>'+laHeadPreview(key,which); row.onmousedown=(e)=>e.stopPropagation(); row.onclick=()=>{ if(which==='end')o.headEnd=key; else o.headStart=key; laRenderObj(o); pop.remove(); }; pop.appendChild(row); });
-  LA.layer.appendChild(pop);
-  const ar=anchor.getBoundingClientRect(), lr=LA.layer.getBoundingClientRect();
-  let left=ar.left-lr.left-20, top=ar.bottom-lr.top+6;
-  left=Math.max(4,Math.min(left, LA.layer.clientWidth-pop.offsetWidth-4));
-  if(top+pop.offsetHeight>LA.layer.clientHeight) top=ar.top-lr.top-pop.offsetHeight-6;
-  pop.style.left=left+'px'; pop.style.top=top+'px';
-}
-function laHeadPreview(kind,which){ const c='#475569'; const end=which==='end'; let extra='';
-  if(kind==='triangle')extra='<path d="'+(end?'M16,1 L24,5 L16,9 Z':'M8,1 L0,5 L8,9 Z')+'" fill="'+c+'"/>';
-  if(kind==='chevron')extra='<path d="'+(end?'M16,1 L24,5 L16,9':'M8,1 L0,5 L8,9')+'" fill="none" stroke="'+c+'" stroke-width="1.6"/>';
-  if(kind==='circle')extra='<circle cx="'+(end?22:2)+'" cy="5" r="3.2" fill="'+c+'"/>';
-  if(kind==='square')extra='<rect x="'+(end?18:0)+'" y="2" width="6" height="6" fill="'+c+'"/>';
-  if(kind==='diamond')extra='<path d="M20,1 L24,5 L20,9 L16,5 Z" fill="'+c+'"/>';
-  return '<svg width="26" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="'+c+'" stroke-width="1.6"/>'+extra+'</svg>';
+  LA.HEADS.forEach(([key,label])=>{ const cur=(which==='end'?o.laHeadEnd:o.laHeadStart)||'none';
+    const row=document.createElement('div'); row.className='la-row'+(cur===key?' on':''); row.textContent=label;
+    row.onmousedown=e=>e.stopPropagation(); row.onclick=()=>{ if(which==='end')o.laHeadEnd=key; else o.laHeadStart=key; LA.canvas.requestRenderAll(); laPersist(); pop.remove(); };
+    pop.appendChild(row); });
+  sizer.appendChild(pop);
+  const ar=anchor.getBoundingClientRect(), sr=sizer.getBoundingClientRect();
+  pop.style.left=Math.max(4,ar.left-sr.left-10)+'px'; pop.style.top=(ar.bottom-sr.top+6)+'px';
 }
 
-function laPositionBar(o,bar){
-  const bw=bar.offsetWidth||300; let cx,topRef,botRef;
-  if(laIsLine(o)){ const [sx1,sy1]=laPdfToScreen(o.x1,o.y1); const [sx2,sy2]=laPdfToScreen(o.x2,o.y2); cx=(sx1+sx2)/2; topRef=Math.min(sy1,sy2); botRef=Math.max(sy1,sy2); }
-  else { const r=o._el.getBoundingClientRect(); const [sx,sy]=laPdfToScreen(o.x,o.y); cx=sx+r.width/2; topRef=sy; botRef=sy+r.height; }
-  let left=cx-bw/2; left=Math.max(4,Math.min(left, LA.layer.clientWidth-bw-4));
-  let top=topRef-bar.offsetHeight-(laIsLine(o)?26:14); if(top<4)top=botRef+(laIsLine(o)?26:14);
+function laPositionBar(){
+  const bar=document.getElementById('la-bar'); const o=laActive(); if(!bar||!o) return;
+  const r=o.getBoundingRect(); // canvas coords
+  const bw=bar.offsetWidth||280, bh=bar.offsetHeight||40;
+  let left=r.left+r.width/2-bw/2;
+  const cw=LA.canvas.getWidth();
+  left=Math.max(4,Math.min(left,cw-bw-4));
+  let top=r.top-bh-12; if(top<4) top=r.top+r.height+12;
   bar.style.left=left+'px'; bar.style.top=top+'px';
 }
 
-// ---- Select / mutate --------------------------------------------------------
-function laSelect(o){
-  laDeselect();
-  LA.selected=o;
-  laGetObjs().forEach(x=>{ if(x._el) x._el.style.zIndex=1; });
-  if(o._el) o._el.style.zIndex=5;
-  laSyncLayerSize();
-  laRenderObj(o);
+// ---- object ops ------------------------------------------------------------
+async function laDuplicate(o){
+  const c=LA.canvas; const clone=await o.clone(LA_PROPS);
+  clone.set({left:o.left+14, top:o.top+14}); laAttach(clone); c.add(clone); c.setActiveObject(clone);
+  laPersist(); c.requestRenderAll();
 }
-function laDeselect(){
-  if(LA.selected) { const o=LA.selected; LA.selected=null; if(o._el) laRenderObj(o); }
-  LA.selected=null;
-  laClearChrome();
-  laSyncLayerSize();
+function laDeleteActive(){
+  const c=LA.canvas; const objs=c.getActiveObjects(); objs.forEach(o=>c.remove(o)); c.discardActiveObject(); laHideBar(); laPersist(); c.requestRenderAll();
 }
-function laDelete(o){
-  const objs=laGetObjs(); const i=objs.indexOf(o); if(i>=0)objs.splice(i,1);
-  if(o._el)o._el.remove(); laDeselect();
-  if(typeof renderFileList==='function') renderFileList();
-  if(typeof markAnnotated==='function') markAnnotated();
-}
-function laDuplicate(o){
-  const n=JSON.parse(JSON.stringify(o)); n._el=null; n.id=laUid();
-  if(laIsLine(n)){ n.x1+=12;n.y1-=12;n.x2+=12;n.y2-=12; } else { n.x+=12; n.y-=12; }
-  laGetObjs().push(n); laBuildEl(n); laRenderObj(n); laSelect(n);
-}
+function laDeselect(){ if(LA.canvas){ LA.canvas.discardActiveObject(); LA.canvas.requestRenderAll(); } laHideBar(); }
 
-// ---- Pointer handling -------------------------------------------------------
-function laObjAt(target){ const el=target.closest('.la-obj'); if(!el)return null; return laGetObjs().find(x=>x._el===el); }
-function laPt(e){ const r=LA.layer.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
-
-function laOnDown(e){
-  if(e.target.closest('.la-bar')||e.target.closest('.la-popup')||e.target.closest('.la-handle')) return;
-  if(LA.layer) LA.layer.querySelectorAll('.la-popup').forEach(p=>p.remove());
-  const hit=laObjAt(e.target);
-  if(hit){
-    if(LA.selected!==hit) laSelect(hit);
-    if(e.target.classList.contains('la-txt')) return;   // editing text
-    const p=laPt(e);
-    if(laIsLine(hit)){
-      LA.drag={o:hit,line:true,ox:p.x,oy:p.y,x1:hit.x1,y1:hit.y1,x2:hit.x2,y2:hit.y2};
-    } else {
-      const [sx,sy]=laPdfToScreen(hit.x,hit.y);
-      LA.drag={o:hit,ox:p.x-sx,oy:p.y-sy};
-    }
-    e.preventDefault(); return;
-  }
-  if(S.tool==='select'){ laDeselect(); return; }
-  if(!laIsTool(S.tool)) return;
-
-  const p=laPt(e);
-  if(S.tool==='arrow'||S.tool==='line'){
-    const [px,py]=laScreenToPdf(p.x,p.y);
-    const o={id:laUid(),type:S.tool,x1:px,y1:py,x2:px,y2:py,color:S.color||'#2563eb',stroke:S.strokeSize||3,dash:'solid',
-             headEnd:(S.tool==='arrow'?'triangle':'none'),headStart:'none'};
-    laGetObjs().push(o); laBuildEl(o); laRenderObj(o);
-    LA.drawing={o,line:true,sx:p.x,sy:p.y};
-    e.preventDefault(); return;
-  }
-  if(S.tool==='text'){
-    const [px,py]=laScreenToPdf(p.x,p.y);
-    const o={id:laUid(),type:'text',x:px,y:py,w:80,h:24,rot:0,color:S.color||'#000000',text:'Tekst',
-             font:'Helvetica',fontSize:S.fontSize||18,bold:false,italic:false};
-    laGetObjs().push(o); laBuildEl(o); laRenderObj(o); laSelect(o);
-    const te=o._el.querySelector('.la-txt');
-    if(te){ te.contentEditable=true; setTimeout(()=>{ te.focus(); const r=document.createRange(); r.selectNodeContents(te); const s=getSelection(); s.removeAllRanges(); s.addRange(r); },0); }
-    if(typeof markAnnotated==='function') markAnnotated();
-    e.preventDefault(); return;
-  }
-  // rect / circle / highlight — drag-to-size in screen space, store as pdf rect
-  const o={id:laUid(),type:S.tool,_sx:p.x,_sy:p.y,x:0,y:0,w:1,h:1,rot:0,
-           color:(S.tool==='highlight'?(S.color||'#fde047'):(S.color||'#2563eb')),
-           stroke:S.strokeSize||3,dash:'solid'};
-  if(S.tool==='highlight') o.opacity=0.32;
-  laGetObjs().push(o); laBuildEl(o);
-  LA.drawing={o,sx:p.x,sy:p.y};
-  e.preventDefault();
-}
-
-function laScreenRectToPdf(o, cssLeft, cssTop, cssW, cssH){
-  // store top-left in pdf coords + width/height in pdf units (zoom-independent)
-  const [px,py]=laScreenToPdf(cssLeft, cssTop);
-  o.x=px; o.y=py;
-  o.w=cssW/S.zoom; o.h=cssH/S.zoom;
-}
-
-window.addEventListener('mousemove',(e)=>{
-  if(!LA.drawing && !LA.drag) return;
-  const p=laPt(e);
-  if(LA.drawing){
-    const o=LA.drawing.o;
-    if(LA.drawing.line){ const [px,py]=laScreenToPdf(p.x,p.y); o.x2=px; o.y2=py; laRenderObj(o); }
-    else {
-      const left=Math.min(LA.drawing.sx,p.x), top=Math.min(LA.drawing.sy,p.y);
-      const w=Math.max(2,Math.abs(p.x-LA.drawing.sx)), h=Math.max(2,Math.abs(p.y-LA.drawing.sy));
-      laScreenRectToPdf(o,left,top,w,h); laRenderObj(o);
-    }
-  } else if(LA.drag){
-    const o=LA.drag.o;
-    if(LA.drag.line){
-      const ddx=p.x-LA.drag.ox, ddy=p.y-LA.drag.oy;
-      // convert delta from screen to pdf by converting both endpoints fresh
-      const [nsx1,nsy1]=laPdfToScreen(LA.drag.x1,LA.drag.y1);
-      const [nsx2,nsy2]=laPdfToScreen(LA.drag.x2,LA.drag.y2);
-      const [p1x,p1y]=laScreenToPdf(nsx1+ddx,nsy1+ddy);
-      const [p2x,p2y]=laScreenToPdf(nsx2+ddx,nsy2+ddy);
-      o.x1=p1x;o.y1=p1y;o.x2=p2x;o.y2=p2y; laRenderObj(o);
-    } else {
-      laScreenRectToPdf(o, p.x-LA.drag.ox, p.y-LA.drag.oy, o.w*S.zoom, o.h*S.zoom);
-      laRenderObj(o);
-    }
-    const bar=LA.layer.querySelector('.la-bar'); if(bar)laPositionBar(o,bar);
-  }
-});
-
-window.addEventListener('mouseup',()=>{
-  if(LA.drawing){
-    const o=LA.drawing.o; const wasLine=LA.drawing.line; LA.drawing=null;
-    if(wasLine){
-      const [sx1,sy1]=laPdfToScreen(o.x1,o.y1), [sx2,sy2]=laPdfToScreen(o.x2,o.y2);
-      if(Math.hypot(sx2-sx1,sy2-sy1)<5){ laDelete(o); } else { laSelect(o); if(typeof markAnnotated==='function')markAnnotated(); }
-    } else {
-      if((o.w*S.zoom)<4 && (o.h*S.zoom)<4){ laDelete(o); } else { laSelect(o); if(typeof markAnnotated==='function')markAnnotated(); }
-    }
-    if(typeof renderFileList==='function') renderFileList();
-  }
-  LA.drag=null;
-});
-
-function laStartEndpoint(e,o,which){ e.stopPropagation(); e.preventDefault();
-  function mm(ev){ const p=laPt(ev); const [px,py]=laScreenToPdf(p.x,p.y); if(which==='p1'){o.x1=px;o.y1=py;}else{o.x2=px;o.y2=py;} laRenderObj(o); const bar=LA.layer.querySelector('.la-bar'); if(bar)laPositionBar(o,bar); }
-  function mu(){ window.removeEventListener('mousemove',mm); window.removeEventListener('mouseup',mu); }
-  window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu);
-}
-function laStartResize(e,o,dir){ e.stopPropagation(); e.preventDefault();
-  const start=laPt(e);
-  const [sx,sy]=laPdfToScreen(o.x,o.y); const o0={left:sx,top:sy,w:o.w*S.zoom,h:o.h*S.zoom};
-  function mm(ev){ const p=laPt(ev); const dx=p.x-start.x,dy=p.y-start.y; let{left,top,w,h}=o0;
-    if(dir.includes('e'))w=Math.max(6,o0.w+dx); if(dir.includes('s'))h=Math.max(6,o0.h+dy);
-    if(dir.includes('w')){w=Math.max(6,o0.w-dx);left=o0.left+dx;} if(dir.includes('n')){h=Math.max(6,o0.h-dy);top=o0.top+dy;}
-    laScreenRectToPdf(o,left,top,w,h); laRenderObj(o); const bar=LA.layer.querySelector('.la-bar'); if(bar)laPositionBar(o,bar); }
-  function mu(){ window.removeEventListener('mousemove',mm); window.removeEventListener('mouseup',mu); }
-  window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu);
-}
-function laStartRotate(e,o){ e.stopPropagation(); e.preventDefault();
-  const rect=o._el.getBoundingClientRect(); const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
-  function mm(ev){ const ang=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI+90; o.rot=Math.round(ang); laRenderObj(o); const bar=LA.layer.querySelector('.la-bar'); if(bar)laPositionBar(o,bar); }
-  function mu(){ window.removeEventListener('mousemove',mm); window.removeEventListener('mouseup',mu); }
-  window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu);
-}
-
-// Esc / delete
+// Esc + delete
 window.addEventListener('keydown',(e)=>{
-  if(!laIsTool(S.tool) && !LA.selected) return;
+  if(!LA.canvas) return;
+  const ae=document.activeElement;
+  const editing = LA.canvas.getActiveObject() && LA.canvas.getActiveObject().isEditing;
   if(e.key==='Escape'){ if(typeof setTool==='function') setTool('select'); laDeselect(); return; }
-  if((e.key==='Delete'||e.key==='Backspace') && LA.selected && !(e.target.classList && e.target.classList.contains('la-txt'))){
-    laDelete(LA.selected);
+  if((e.key==='Delete'||e.key==='Backspace') && !editing && LA.canvas.getActiveObject()){
+    if(ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')) return;
+    laDeleteActive();
   }
 });
 
-// ---- Convert live objects -> S.annos for baking -----------------------------
-// Called right before bakeAnnotations during download. Produces unbaked annos
-// in the shape bakeAnnotations() understands, with extra fields for new styles.
+// ---- DOWNLOAD: convert fabric objects -> pdf-space annotations --------------
+// Uses LA._vp (current viewport). For correctness the active page must be the
+// one being baked; bulk handled by switching is out of scope — single-file path
+// is the primary one and matches the on-screen viewport exactly.
 function laFlushToAnnos(fileIdx){
-  const byPage = LA.objects[fileIdx];
-  LA._flushed = []; // track {pg, anno} so we can remove after baking
-  if(!byPage) return;
+  LA._flushed=[];
+  // Ensure latest edits are serialized
+  if(LA.canvas && fileIdx===S.activeIdx) laPersist();
+  const byPage=LA.objectsByPage[fileIdx]; if(!byPage) return;
   if(!S.annos[fileIdx]) S.annos[fileIdx]={};
   Object.keys(byPage).forEach(pgStr=>{
-    const pg=parseInt(pgStr);
-    const list=byPage[pg]; if(!list||!list.length) return;
+    const pg=parseInt(pgStr); const list=byPage[pg]; if(!list||!list.length) return;
     if(!S.annos[fileIdx][pg]) S.annos[fileIdx][pg]=[];
-    list.forEach(o=>{
-      const anno=laToAnno(o);
-      S.annos[fileIdx][pg].push(anno);
-      LA._flushed.push({fi:fileIdx, pg, anno});
+    list.forEach(serialized=>{
+      const anno=laSerializedToAnno(serialized, fileIdx, pg);
+      if(anno){ S.annos[fileIdx][pg].push(anno); LA._flushed.push({fi:fileIdx,pg,anno}); }
     });
   });
 }
-// Remove the temporary flushed annos so a second download doesn't duplicate them.
 function laUnflush(){
   if(!LA._flushed) return;
-  LA._flushed.forEach(({fi,pg,anno})=>{
-    const arr = S.annos[fi] && S.annos[fi][pg];
-    if(arr){ const i=arr.indexOf(anno); if(i>=0) arr.splice(i,1); }
-  });
+  LA._flushed.forEach(({fi,pg,anno})=>{ const arr=S.annos[fi]&&S.annos[fi][pg]; if(arr){ const i=arr.indexOf(anno); if(i>=0)arr.splice(i,1); } });
   LA._flushed=null;
 }
 
-// Map a live object (pdf-point space) to a bake-ready annotation.
-// We store PDF-space directly and tag _pdfSpace so bakeAnnotations uses it as-is.
-function laToAnno(o){
-  const base={ _pdfSpace:true, _baked:false, color:o.color, opacity:(o.opacity!=null?o.opacity:1),
-               strokeSize:o.stroke||3, dash:o.dash||'solid', rot:o.rot||0 };
-  if(o.type==='text'){
-    return Object.assign(base,{ type:'text', _px:o.x, _py:o.y, text:o.text||'', fontSize:o.fontSize||18,
-                                font:o.font||'Helvetica', bold:!!o.bold, italic:!!o.italic });
+// Convert one serialized fabric object (canvas coords) to a _pdfSpace annotation.
+// We need a viewport for that page. For the active page we use LA._vp; for other
+// pages we lazily build one synchronously via the cached canvas viewport rotation.
+function laSerializedToAnno(s, fileIdx, pg){
+  const vp=LA._vp; if(!vp) return null;
+  const col=s.laColor||s.stroke||s.fill||'#000000';
+  const base={ _pdfSpace:true, _baked:false, color:col, strokeSize:s.laStroke||s.strokeWidth||3,
+               dash:s.laDash||'solid', rot:0 };
+  if(s.laType==='text'){
+    // top-left of textbox in canvas coords
+    const [px,py]=laScreenToPdf(s.left, s.top);
+    return Object.assign(base,{ type:'text', _px:px, _py:py, text:s.laText!=null?s.laText:s.text,
+      fontSize:s.fontSize||18, font:s.laFont||'Helvetica', bold:!!s.laBold, italic:!!s.laItalic, rot:s.angle||0 });
   }
-  if(laIsLine(o)){
-    return Object.assign(base,{ type:o.type, _x1:o.x1,_y1:o.y1,_x2:o.x2,_y2:o.y2,
-                                headStart:o.headStart||'none', headEnd:o.headEnd||'none' });
+  if(s.laType==='line'||s.laType==='arrow'){
+    // fabric line stores x1,y1,x2,y2 relative to its own coordinate; with no scaling
+    // the absolute scene coords are left/top + (x1..). Simplest: use the object's
+    // calc'd points. When unmodified, x1/y1/x2/y2 already are scene coords.
+    const [a1x,a1y]=laScreenToPdf(s.x1,s.y1);
+    const [a2x,a2y]=laScreenToPdf(s.x2,s.y2);
+    return Object.assign(base,{ type:s.laType, _x1:a1x,_y1:a1y,_x2:a2x,_y2:a2y,
+      headStart:s.laHeadStart||'none', headEnd:s.laHeadEnd||'none' });
   }
-  // rect / circle / highlight: stored top-left x,y + w,h in pdf units
-  return Object.assign(base,{ type:o.type, _px:o.x,_py:o.y,_pw:o.w,_ph:o.h, opacity:(o.opacity!=null?o.opacity:0.32) });
+  if(s.laType==='highlight'||s.laType==='rect'){
+    const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
+    // The object may also be rotated by the user (s.angle). Compute its 4 corners
+    // in CANVAS coords (accounting for object angle about its center), then convert
+    // each corner through the viewport so PAGE rotation is also handled. We draw a
+    // polygon through the 4 PDF-space corners — correct under any rotation.
+    const corners = laRectCornersCanvas(s.left, s.top, w, h, s.angle||0);
+    const pdfPts = corners.map(c=>{ const p=laScreenToPdf(c[0],c[1]); return [p[0],p[1]]; });
+    return Object.assign(base,{ type:s.laType==='highlight'?'polyfill':'polystroke',
+      _pts:pdfPts, opacity:(s.laType==='highlight')?(s.laOpacity||s.opacity||0.32):1 });
+  }
+  if(s.laType==='circle'){
+    const rx=(s.rx||0)*(s.scaleX||1), ry=(s.ry||0)*(s.scaleY||1);
+    // Approximate ellipse with a polygon of points around it, converted per-point.
+    const cxC=s.left+rx, cyC=s.top+ry; const ang=(s.angle||0)*Math.PI/180;
+    const pts=[]; const N=40;
+    for(let i=0;i<N;i++){ const th=i/N*2*Math.PI;
+      let ex=Math.cos(th)*rx, ey=Math.sin(th)*ry;
+      const rxp=ex*Math.cos(ang)-ey*Math.sin(ang), ryp=ex*Math.sin(ang)+ey*Math.cos(ang);
+      const p=laScreenToPdf(cxC+rxp, cyC+ryp); pts.push([p[0],p[1]]);
+    }
+    return Object.assign(base,{ type:'polystroke', _pts:pts, _closed:true });
+  }
+  return null;
+}
+// 4 corners (TL,TR,BR,BL) of a possibly-rotated rect in canvas coords.
+function laRectCornersCanvas(left,top,w,h,angleDeg){
+  const a=angleDeg*Math.PI/180;
+  // fabric rotates about the object's top-left by default for non-grouped? Actually
+  // fabric rotates about center when originX/Y are 'center'; default origin is top-left,
+  // and angle rotates about that origin. We replicate: corners relative to (left,top).
+  const pts=[[0,0],[w,0],[w,h],[0,h]];
+  return pts.map(([px,py])=>{
+    const rx=px*Math.cos(a)-py*Math.sin(a), ry=px*Math.sin(a)+py*Math.cos(a);
+    return [left+rx, top+ry];
+  });
 }
 
-// Public API used by host code
-window.LA = LA;
-// Global diagnostics: any uncaught error is printed clearly so it can be copied.
-window.addEventListener('error', (e)=>{ console.error('[PTP ERROR]', e.message, 'at', e.filename+':'+e.lineno+':'+e.colno, e.error&&e.error.stack?('\n'+e.error.stack):''); });
-window.addEventListener('unhandledrejection', (e)=>{ console.error('[PTP PROMISE ERROR]', e.reason && e.reason.message ? e.reason.message : e.reason, e.reason&&e.reason.stack?('\n'+e.reason.stack):''); });
-// Helper to dump the current live-anno state for support.
-window.laDump = function(){ try{ console.log('[LA DUMP] S.rotation=',S.rotation,'zoom=',S.zoom,'page=',S.page,'activeIdx=',S.activeIdx); console.log('[LA DUMP] objects on page=', JSON.stringify((LA.objects[S.activeIdx]&&LA.objects[S.activeIdx][S.page])||[], (k,v)=>k==='_el'?undefined:v)); console.log('[LA DUMP] vp rotation=',LA._vp&&LA._vp.rotation,'scale=',LA._vp&&LA._vp.scale); }catch(e){ console.error(e); } };
-window.laRenderPage = laRenderPage;
-window.laSyncLayerSize = laSyncLayerSize;
-window.laFlushToAnnos = laFlushToAnnos;
-window.laUnflush = laUnflush;
-window.laDeselect = laDeselect;
-window.laGetObjs = laGetObjs;
+// exports consumed by host
+window.LA=LA;
+window.laRenderPage=laRenderPage;
+window.laSyncLayerSize=laSyncLayerSize;
+window.laFlushToAnnos=laFlushToAnnos;
+window.laUnflush=laUnflush;
+window.laDeselect=laDeselect;
+window.laApplyToolMode=laApplyToolMode;
 
 </script>
       <div id="te-edit-bar">
