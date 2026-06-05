@@ -5112,6 +5112,8 @@ async function laRenderPage(){
     try{
       const objs=await fabric.util.enlivenObjects(list);
       objs.forEach(o=>{ laAttach(o); c.add(o); });
+      if(LA.DEBUG){ console.log('[LA render] rebuilt',objs.length,'objects on canvas',Math.round(c.getWidth())+'x'+Math.round(c.getHeight()),'(vp rot '+(LA._vp?LA._vp.rotation:'?')+'):');
+        objs.forEach(o=>{ console.log('[LA render]   '+o.laType+' L/T/W/H',Math.round(o.left),Math.round(o.top),Math.round(o.width||o.rx*2||0),Math.round(o.height||o.ry*2||0)); }); }
     }catch(e){ if(LA.DEBUG)console.error('[LA] enliven',e); }
   }
   laApplyToolMode();
@@ -5125,7 +5127,11 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
   const c2p = (x,y)=>{ const p=oldVp.convertToPdfPoint(x,y); return [p[0],p[1]]; };
   const p2c = (px,py)=>{ const p=newVp.convertToViewportPoint(px,py); return [p[0],p[1]]; };
   const remap = (x,y)=>{ const [px,py]=c2p(x,y); return p2c(px,py); };
+  if(LA.DEBUG) console.log('[LA remapList] oldVp rot/size:',oldVp.rotation,Math.round(oldVp.width)+'x'+Math.round(oldVp.height),'| newVp rot/size:',newVp.rotation,Math.round(newVp.width)+'x'+Math.round(newVp.height),'| delta:',deltaDeg);
   list.forEach(s=>{
+    const _b = s.laType==='line'||s.laType==='arrow'
+      ? 'pts('+Math.round(s.x1)+','+Math.round(s.y1)+')->('+Math.round(s.x2)+','+Math.round(s.y2)+')'
+      : 'L/T/W/H '+Math.round(s.left)+','+Math.round(s.top)+','+Math.round((s.width||s.rx*2||0))+','+Math.round((s.height||s.ry*2||0));
     if(s.laType==='line'||s.laType==='arrow'){
       const [nx1,ny1]=remap(s.x1,s.y1); const [nx2,ny2]=remap(s.x2,s.y2);
       s.x1=nx1; s.y1=ny1; s.x2=nx2; s.y2=ny2;
@@ -5147,6 +5153,12 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
       const nw=Math.abs(bx-ax), nh=Math.abs(by-ay);
       if(s.laType==='text'){ s.scaleX=1; s.scaleY=1; if(nw>4)s.width=nw; }
       else { s.width=nw; s.height=nh; s.scaleX=1; s.scaleY=1; }
+    }
+    if(LA.DEBUG){
+      const _a = s.laType==='line'||s.laType==='arrow'
+        ? 'pts('+Math.round(s.x1)+','+Math.round(s.y1)+')->('+Math.round(s.x2)+','+Math.round(s.y2)+')'
+        : 'L/T/W/H '+Math.round(s.left)+','+Math.round(s.top)+','+Math.round((s.width||s.rx*2||0))+','+Math.round((s.height||s.ry*2||0));
+      console.log('[LA remapList]   '+s.laType+': '+_b+'  =>  '+_a);
     }
   });
 }
