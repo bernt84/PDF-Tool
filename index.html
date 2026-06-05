@@ -2242,9 +2242,11 @@ async function autoRotateAllPages(){
     updateProgress(pg,total,'Side '+pg+' / '+total);
     try{
       const page=await f.pdfJsDoc.getPage(pg);
-      const vp=page.getViewport({scale:1.2,rotation:0});   // higher res helps OSD
+      const vp=page.getViewport({scale:2.0,rotation:0});   // higher res = better OSD
       const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
-      await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
+      const octx=off.getContext('2d');
+      octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);   // white bg helps OSD
+      await page.render({canvasContext:octx,viewport:vp}).promise;
       let rotation=null;
       if(useOsd){ rotation=await detectPageOrientation(off); }
       if(rotation==null){ // fallback heuristic
@@ -3547,7 +3549,10 @@ async function getOsdWorker(){
   const badge=document.getElementById('ai-ready-badge');
   if(badge){ badge.style.display='flex'; badge.style.opacity='1'; badge.className='loading'; badge.innerHTML='<span class="spin"></span> Orientering indlæser…'; }
   _osdWorker = await Tesseract.createWorker('osd', 1, { legacyCore:true, legacyLang:true });
-  try{ await _osdWorker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM ? Tesseract.PSM.OSD_ONLY : '0' }); }catch(e){}
+  try{ await _osdWorker.setParameters({
+    tessedit_pageseg_mode: Tesseract.PSM ? Tesseract.PSM.OSD_ONLY : '0',
+    user_defined_dpi: '300'   // canvas has no DPI metadata; tell Tesseract one so OSD works reliably
+  }); }catch(e){}
   _osdReady = true;
   return _osdWorker;
 }
@@ -3564,9 +3569,9 @@ async function detectPageOrientation(canvas){
     if(window.LA && LA.DEBUG) console.log('[OSD] orientation_degrees:',deg,'confidence:',conf);
     if(typeof deg==='number' && !isNaN(deg)){
       const correction = ((360 - deg) % 360 + 360) % 360;
-      // Tesseract OSD confidence: real signal is usually > ~1. Anything lower is
-      // noise on sparse/ambiguous pages — don't rotate on a guess.
-      const MIN_CONF = 1.0;
+      // With proper DPI + white bg + 2x render, real readings rise. Keep a low
+      // floor to still reject pure noise on blank/sparse pages.
+      const MIN_CONF = 0.7;
       if(correction===0) return 0;
       if(conf!=null && conf < MIN_CONF){
         if(window.LA && LA.DEBUG) console.log('[OSD] confidence too low ('+conf.toFixed(2)+') — treating as upright');
