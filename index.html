@@ -2294,6 +2294,10 @@ async function rotateSingle(){
     const url=URL.createObjectURL(blob);
     f.pdfJsDoc=await pdfjsLib.getDocument(url).promise;
     
+    // 2b. Remap live Fabric objects from the old rotation to the new one so they
+    // follow the page content. Must run BEFORE S.rotation changes (uses old LA._vp).
+    if(typeof laRemapForRotation==='function'){ try{ await laRemapForRotation(90); }catch(e){ console.error('laRemapForRotation',e); } }
+
     // 4. Set rotation state to match baked rotation
     // pdf.js ignores PDF internal /Rotate — we must pass it explicitly
     S.rotation = newRot;
@@ -5021,6 +5025,59 @@ async function laRenderPage(){
   laHideBar();
   LA._loading=false;
 }
+
+// Remap all stored objects for the CURRENT page when the page is rotated by
+// `deltaDeg` (e.g. +90). Uses the OLD viewport (current LA._vp, pre-rotation)
+// to read PDF coords, then the NEW viewport to place them on the rotated canvas.
+// Geometry is stored in canvas coords, so we go canvas(old) -> PDF -> canvas(new).
+async function laRemapForRotation(deltaDeg){
+  const c=LA.canvas; if(!c) return;
+  // make sure latest edits are serialized
+  laPersist();
+  const list = laCurrentList();
+  if(!list.length) return;
+  const f=S.files[S.activeIdx]; if(!f||!f.pdfJsDoc) return;
+  const oldVp = LA._vp;                                  // pre-rotation viewport (rotation R)
+  if(!oldVp){ if(LA.DEBUG)console.warn('[LA remap] no oldVp'); return; }
+  // New viewport = same page geometry, rotation advanced by delta. Clone the OLD
+  // viewport so we don't depend on the reloaded page's intrinsic /Rotate.
+  const newRotation = ((oldVp.rotation+deltaDeg)%360+360)%360;
+  let newVp;
+  try{ newVp = oldVp.clone({ rotation:newRotation }); }
+  catch(e){ const page=await f.pdfJsDoc.getPage(S.page); newVp=page.getViewport({scale:S.zoom, rotation:newRotation}); }
+  const c2p = (x,y)=>{ const p=oldVp.convertToPdfPoint(x,y); return [p[0],p[1]]; };
+  const p2c = (px,py)=>{ const p=newVp.convertToViewportPoint(px,py); return [p[0],p[1]]; };
+  const remap = (x,y)=>{ const [px,py]=c2p(x,y); return p2c(px,py); };
+  list.forEach(s=>{
+    if(s.laType==='line'||s.laType==='arrow'){
+      const [nx1,ny1]=remap(s.x1,s.y1); const [nx2,ny2]=remap(s.x2,s.y2);
+      s.x1=nx1; s.y1=ny1; s.x2=nx2; s.y2=ny2;
+      // fabric stores left/top as bounding box; recompute
+      s.left=Math.min(nx1,nx2); s.top=Math.min(ny1,ny2);
+      s.width=Math.abs(nx2-nx1); s.height=Math.abs(ny2-ny1);
+    } else if(s.laType==='circle'){
+      const rx=(s.rx||0)*(s.scaleX||1), ry=(s.ry||0)*(s.scaleY||1);
+      const cx=s.left+rx, cy=s.top+ry;
+      const [ncx,ncy]=remap(cx,cy);
+      // 90/270 swaps rx/ry visually
+      const swap=(Math.abs(deltaDeg)%180)===90;
+      const nrx=swap?ry:rx, nry=swap?rx:ry;
+      s.rx=nrx; s.ry=nry; s.scaleX=1; s.scaleY=1;
+      s.left=ncx-nrx; s.top=ncy-nry;
+    } else { // rect, highlight, text — use top-left + size
+      const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
+      // transform the top-left and bottom-right corners, rebuild axis-aligned box
+      const [ax,ay]=remap(s.left,s.top);
+      const [bx,by]=remap(s.left+w,s.top+h);
+      s.left=Math.min(ax,bx); s.top=Math.min(ay,by);
+      const nw=Math.abs(bx-ax), nh=Math.abs(by-ay);
+      if(s.laType==='text'){ s.scaleX=1; s.scaleY=1; /* keep font size; box width approx */ if(nw>4)s.width=nw; }
+      else { s.width=nw; s.height=nh; s.scaleX=1; s.scaleY=1; }
+    }
+  });
+  if(LA.DEBUG) console.log('[LA remap] rotated',list.length,'objects by',deltaDeg,'deg (oldRot',oldVp?oldVp.rotation:'?','-> newRot',newVp.rotation,')');
+}
+window.laRemapForRotation=laRemapForRotation;
 
 // ---- creating objects ------------------------------------------------------
 function laStyleFor(){
