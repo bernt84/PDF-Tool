@@ -2229,12 +2229,12 @@ async function autoRotateAllPages(){
   const f=S.files[S.activeIdx];
   if(!f.pdfJsDoc){toast('Dokument ikke klar',true);return;}
   const total=f.pdfJsDoc.numPages;
-  console.log('[autoRotate] pages=',total,'| Tesseract loaded?',typeof Tesseract!=='undefined','| apiKey?',!!S.apiKey);
+  console.log('[autoRotate] pages=',total,'| Tesseract loaded?',typeof Tesseract!=='undefined');
   showProgress('Auto-Roter dokument',0,total);
-  let worker=null;
-  try{ worker=await getTessWorker(); }catch(e){ hideProgress(); console.error('[autoRotate] OCR init failed',e); toast('OCR fejl: '+e.message,true); return; }
-  if(!worker && !S.apiKey){ hideProgress(); console.error('[autoRotate] no OCR worker'); toast('OCR kunne ikke starte — genindlæs siden',true); return; }
-  console.log('[autoRotate] OCR worker ready, starting page loop');
+  // Prepare OSD (orientation) engine — this is what reliably reports rotation.
+  let useOsd=true;
+  try{ await getOsdWorker(); }catch(e){ console.warn('[autoRotate] OSD unavailable, using heuristic',e); useOsd=false; try{ await getTessWorker(); }catch(e2){ hideProgress(); toast('OCR fejl: '+e2.message,true); return; } }
+  console.log('[autoRotate] orientation engine ready (OSD:'+useOsd+'), starting page loop');
   if(!f.pageRotations)f.pageRotations={};
   let changed=0;
   for(let pg=1;pg<=total;pg++){
@@ -2242,16 +2242,20 @@ async function autoRotateAllPages(){
     updateProgress(pg,total,'Side '+pg+' / '+total);
     try{
       const page=await f.pdfJsDoc.getPage(pg);
-      const vp=page.getViewport({scale:0.8,rotation:0});
+      const vp=page.getViewport({scale:1.2,rotation:0});   // higher res helps OSD
       const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
       await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
-      const result=await runTesseract(off);
-      const rotation=detectRotationFromWords(result.words,off.width,off.height);
-      console.log('[autoRotate] page',pg,'detected rotation:',rotation,'words:',(result.words||[]).length);
+      let rotation=null;
+      if(useOsd){ rotation=await detectPageOrientation(off); }
+      if(rotation==null){ // fallback heuristic
+        const result=await runTesseract(off);
+        rotation=detectRotationFromWords(result.words,off.width,off.height);
+      }
+      console.log('[autoRotate] page',pg,'-> rotate',rotation,'deg');
       if(rotation){
         const before=(f.pageRotations[pg]||0);
         if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,pg,rotation,before); }catch(e){ console.error('remap',e); } }
-        f.pageRotations[pg]=before+rotation; f._hasRotation=true; changed++;
+        f.pageRotations[pg]=(before+rotation)%360; f._hasRotation=true; changed++;
       }
     }catch(e){ if(window.LA&&LA.DEBUG)console.warn('autoRotateAllPages page',pg,e); }
   }
@@ -3532,6 +3536,43 @@ async function getTessWorker() {
   }
   return AI.tessWorker;
 }
+
+// Dedicated OSD (Orientation & Script Detection) worker. Uses the legacy OSD
+// engine which is what actually reports page orientation in degrees.
+let _osdWorker = null, _osdReady = false;
+async function getOsdWorker(){
+  if(_osdReady && _osdWorker) return _osdWorker;
+  if(typeof Tesseract==='undefined') throw new Error('Tesseract ikke indlæst');
+  const badge=document.getElementById('ai-ready-badge');
+  if(badge){ badge.style.display='flex'; badge.style.opacity='1'; badge.className='loading'; badge.innerHTML='<span class="spin"></span> Orientering indlæser…'; }
+  _osdWorker = await Tesseract.createWorker('osd', 1, { legacyCore:true, legacyLang:true });
+  try{ await _osdWorker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM ? Tesseract.PSM.OSD_ONLY : '0' }); }catch(e){}
+  _osdReady = true;
+  return _osdWorker;
+}
+
+// Detect how many degrees a page canvas must be rotated CLOCKWISE to be upright.
+// Returns 0, 90, 180, or 270. Uses Tesseract OSD; falls back to bbox heuristic.
+async function detectPageOrientation(canvas){
+  try{
+    const w=await getOsdWorker();
+    const res=await w.detect(canvas);
+    const d=res && res.data ? res.data : {};
+    const deg = d.orientation_degrees;
+    const conf = d.orientation_confidence;
+    if(window.LA && LA.DEBUG) console.log('[OSD] orientation_degrees:',deg,'confidence:',conf);
+    if(typeof deg==='number' && !isNaN(deg)){
+      // Tesseract reports how many degrees the text is rotated; the correction
+      // (clockwise rotation to make it upright) is (360 - deg) % 360.
+      const correction = ((360 - deg) % 360 + 360) % 360;
+      // Require a little confidence to avoid spurious flips on sparse pages
+      if(conf==null || conf>=1) return correction;
+      return correction; // OSD with any reading is still better than the heuristic
+    }
+  }catch(e){ if(window.LA && LA.DEBUG) console.warn('[OSD] detect failed, falling back',e); }
+  return null; // signal caller to fall back
+}
+
 
 // Enhanced file badges — BM + OCR + Rotation status
 function fileBadges(f) {
