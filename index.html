@@ -2263,7 +2263,7 @@ async function autoRotateAllPages(){
   }
   hideProgress(); renderFileList();
   if(typeof laClearAiBadge==='function') laClearAiBadge();
-  if(S.activeIdx>=0) await renderPage();
+  if(S.activeIdx>=0){ await renderPage(); if(changed && typeof zoomFit==='function') zoomFit(); }
   toast(changed?('Roteret '+changed+' side(r) ✓'):'Alle sider var korrekt orienteret ✓','ok');
 }
 
@@ -2303,11 +2303,15 @@ function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.
 function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
 function zoomFit(){
   if(S.activeIdx<0)return;
-  S.files[S.activeIdx].pdfJsDoc.getPage(S.page).then(pg=>{
-    const vp=pg.getViewport({scale:1});
+  const f=S.files[S.activeIdx];
+  f.pdfJsDoc.getPage(S.page).then(pg=>{
+    const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+    const vp=pg.getViewport({scale:1, rotation:(S.rotation+pageRot)%360}); // rotated dims
     const cont=document.getElementById('cv-container');
-    const availW=cont.clientWidth-28;
-    S.zoom=Math.min(availW/vp.width, 2);
+    const availW=Math.max(50, cont.clientWidth-28);
+    const availH=Math.max(50, cont.clientHeight-28);
+    const fit=Math.min(availW/vp.width, availH/vp.height, 2);
+    S.zoom=Math.max(0.1, fit);
     renderPage();
   });
 }
