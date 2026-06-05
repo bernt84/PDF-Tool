@@ -642,7 +642,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
       <div class="mb-menu" id="m-pages">
         <div class="mb-item" onclick="rotateSingle(90);closeMenus()">↻ Roter 90° (med uret)</div>
         <div class="mb-item" onclick="rotateSingle(-90);closeMenus()">↺ Roter 90° (mod uret)</div>
-        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">⟳ Auto-Roter dokument (OCR)</div>
+        <div class="mb-item" onclick="autoRotateSmart();closeMenus()">⟳ Auto-Roter (OCR)</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="insertBlankPage();closeMenus()">+ Indsæt blank side</div>
         <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
@@ -671,8 +671,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="switchRT('anno');closeMenus()">🔍 OCR Markering (søg)</div>
         <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Markering — Bulk…</div>
         <div class="mb-sep"></div>
-        <div class="mb-item" onclick="autoRotateAllPages();closeMenus()">⟳ Auto-Roter dokument (OCR)</div>
-        <div class="mb-item" onclick="autoRotateAll();closeMenus()">⟳ Auto-Roter alle markerede filer</div>
+        <div class="mb-item" onclick="autoRotateSmart();closeMenus()">⟳ Auto-Roter (OCR)</div>
       </div>
     </div>
     <!-- Dokument -->
@@ -2267,31 +2266,48 @@ async function autoRotateAllPages(){
   toast(changed?('Roteret '+changed+' side(r) ✓'):'Alle sider var korrekt orienteret ✓','ok');
 }
 
+// Smart entry point: if files are bulk-selected, rotate every page of every
+// selected file; otherwise rotate every page of the active document.
+async function autoRotateSmart(){
+  const selected=S.files.filter(f=>f.bulkSel);
+  if(selected.length>0){ await autoRotateAll(); }
+  else { await autoRotateAllPages(); }
+}
+
 async function autoRotateAll(){
   const files=S.files.filter(f=>f.bulkSel);if(!files.length){toast('Ingen markeret',true);return;}
-  showProgress('Auto-Roter OCR',0,files.length);
-  try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;}
+  showProgress('Auto-Roter markerede filer',0,files.length);
+  let useOsd=true;
+  try{ await getOsdWorker(); }catch(e){ useOsd=false; try{ await getTessWorker(); }catch(e2){ hideProgress(); toast('OCR fejl: '+e2.message,true); return; } }
+  let totalChanged=0;
   for(let fi=0;fi<files.length;fi++){
     if(S._cancelProgress)break;const f=files[fi];updateProgress(fi+1,files.length,f.name);
     try{
       if(!f.pdfJsDoc)f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
       if(!f.pageRotations)f.pageRotations={};
+      const fIdx=S.files.indexOf(f);
       for(let pg=1;pg<=f.pdfJsDoc.numPages;pg++){
-        if(f.pageRotations[pg])continue;
-        const page=await f.pdfJsDoc.getPage(pg);const vp=page.getViewport({scale:0.8,rotation:0});
+        if(S._cancelProgress)break;
+        const page=await f.pdfJsDoc.getPage(pg);
+        const vp=page.getViewport({scale:2.0,rotation:0});
         const off=Object.assign(document.createElement('canvas'),{width:vp.width,height:vp.height});
-        await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
-        const result=await runTesseract(off);
-        const rotation=detectRotationFromWords(result.words,off.width,off.height);
+        const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
+        await page.render({canvasContext:octx,viewport:vp}).promise;
+        let rotation=null;
+        if(useOsd){ rotation=await detectPageOrientation(off); }
+        if(rotation==null){ const result=await runTesseract(off); rotation=detectRotationFromWords(result.words,off.width,off.height); }
         if(rotation){
-          const fIdx=S.files.indexOf(f);
-          if(fIdx>=0 && typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fIdx,pg,rotation,0); }catch(e){} }
-          f.pageRotations[pg]=rotation;f._hasRotation=true;
+          const before=(f.pageRotations[pg]||0);
+          if(fIdx>=0 && typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fIdx,pg,rotation,before); }catch(e){} }
+          f.pageRotations[pg]=(before+rotation)%360; f._hasRotation=true; totalChanged++;
         }
       }
-    }catch(e){}
+    }catch(e){ if(window.LA&&LA.DEBUG)console.warn('autoRotateAll file',e); }
   }
-  hideProgress();renderFileList();if(S.activeIdx>=0)await renderPage();toast('Auto-Roter færdig ✓','ok');
+  hideProgress();renderFileList();
+  if(typeof laClearAiBadge==='function') laClearAiBadge();
+  if(S.activeIdx>=0){ await renderPage(); if(totalChanged && typeof zoomFit==='function') zoomFit(); }
+  toast(totalChanged?('Roteret '+totalChanged+' side(r) i '+files.length+' fil(er) ✓'):'Alle sider var korrekt orienteret ✓','ok');
 }
 
 // ================================================================
@@ -5040,7 +5056,14 @@ function laEnsureCanvas(){
   }
   LA.canvas=new fabric.Canvas(host,{ selection:true, preserveObjectStacking:true, enableRetinaScaling:false });
   // Fabric wraps the canvas in div.canvas-container; pin it over the PDF.
-  if(LA.canvas.wrapperEl){ LA.canvas.wrapperEl.style.position='absolute'; LA.canvas.wrapperEl.style.top='0'; LA.canvas.wrapperEl.style.left='0'; LA.canvas.wrapperEl.style.zIndex='46'; }
+  if(LA.canvas.wrapperEl){ LA.canvas.wrapperEl.style.position='absolute'; LA.canvas.wrapperEl.style.top='0'; LA.canvas.wrapperEl.style.left='0'; LA.canvas.wrapperEl.style.zIndex='46';
+    // Refresh the cached page-offset right before any interaction begins, so the
+    // pointer maps to the correct canvas coords even after scrolling the page view.
+    const recalc=()=>{ try{ LA.canvas.calcOffset(); }catch(e){} };
+    LA.canvas.wrapperEl.addEventListener('pointerenter', recalc, true);
+    LA.canvas.wrapperEl.addEventListener('pointerdown', recalc, true);   // capture: runs before Fabric's own handler
+    LA.canvas.upperCanvasEl && LA.canvas.upperCanvasEl.addEventListener('pointerdown', recalc, true);
+  }
   // shared control styling
   fabric.InteractiveFabricObject.ownDefaults = Object.assign({}, fabric.InteractiveFabricObject.ownDefaults, {
     cornerColor:'#fff', cornerStrokeColor:'#2563eb', borderColor:'#2563eb',
