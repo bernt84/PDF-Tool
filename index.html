@@ -2666,6 +2666,7 @@ async function bakeAnnotations(doc,fileIdx){
     const pdfPage=await f.pdfJsDoc.getPage(pageNum);const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
     for(const a of annos){
       if(a._tePreview) continue;
+      if(a._baked) continue; // already baked into f.buf by bakePageNow — don't draw twice
       const annoZoom = a._zoom || S.zoom;
       const annoDpr = a._dpr || dpr;
       // Use the rotation stored at draw time
@@ -2774,9 +2775,12 @@ async function smartDownload(){
 async function downloadFilePDF(fileIdx){
   const f=S.files[fileIdx];const btn=document.getElementById('tb-save');if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
   try{
+    // Bake any not-yet-baked annotations (on every page) into f.buf first,
+    // so they survive download even if the user never left the page.
+    if(S.annos[fileIdx]){for(const pg of Object.keys(S.annos[fileIdx])){await bakePageNow(fileIdx,parseInt(pg));}}
     const doc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
     doc.setModificationDate(new Date());
-    const viewRot=f._viewRotation||0;if(viewRot)doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+viewRot)%360));});
+    // NOTE: _viewRotation is already baked into f.buf by rotateSingle(), so we must NOT re-apply it here.
     if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
     if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
     if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
@@ -2797,6 +2801,7 @@ async function bulkZip(files){
   for(let fi=0;fi<files.length;fi++){
     if(S._cancelProgress)break;const f=files[fi];const fileIdx=S.files.indexOf(f);updateProgress(fi+1,files.length,f.name);
     try{
+      if(S.annos[fileIdx]){for(const pg of Object.keys(S.annos[fileIdx])){await bakePageNow(fileIdx,parseInt(pg));}}
       const doc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});
       doc.setModificationDate(new Date());
       if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
