@@ -670,7 +670,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
       <div class="mb-menu" id="m-ocr-dd">
         <div class="mb-item" onclick="runOCR();closeMenus()">🔍 OCR denne side → Tekst</div>
         <div class="mb-item" onclick="switchRT('anno');closeMenus()">🔍 OCR Markering (søg)</div>
-        <div class="mb-item" onclick="openM('m-ocr-bulk');closeMenus()">🔍 OCR Markering — Bulk…</div>
         <div class="mb-sep"></div>
         <div class="mb-item" onclick="autoRotateSmart();closeMenus()">⟳ Auto-Roter (OCR)</div>
       </div>
@@ -957,7 +956,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <div class="vsep"></div>
     <button class="btn bGh bSm" onclick="analyzeBulk()" title="Analyser bogmærker i markerede filer">🔍 Analyser</button>
     <button class="btn bGh bSm" onclick="openM('m-bbm')" title="Sæt bogmærker på markerede filer">🔖 Bogmærk</button>
-    <button class="btn bGh bSm" onclick="openM('m-ocr-bulk')" title="OCR overstrekning på markerede filer">👁 OCR Markering</button>
     <div class="vsep"></div>
     <button class="btn bCyn bSm" onclick="openMergeModal()" title="Merge markerede filer til én PDF">⊕ Merge</button>
     <button class="btn bSuc bSm" onclick="smartDownload()" title="Download markerede filer">⬇ Download</button>
@@ -1104,28 +1102,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   </div>
   <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-pwd')">Annuller</button><button class="btn bAmb bSm" onclick="doPwdMark()">💧 Tilføj vandmærke</button></div>
 </div></div>
-
-<!-- OCR BULK -->
-<div class="mbk" id="m-ocr-bulk"><div class="mdl">
-  <div class="mhd">🔍 OCR Markering — Bulk <button onclick="closeM('m-ocr-bulk')">✕</button></div>
-  <div class="mbd">
-    <div style="font-size:12px;color:var(--t2)">Søger i alle markerede filer og markerer teksten automatisk på alle sider.</div>
-    <div class="mfield"><label>Søgetekst</label><input class="minput" id="ocr-bulk-term" type="text" placeholder="F.eks. 84747041" oninput="if(this.value.trim()){var t=document.getElementById('ocr-use-bm'); if(t)t.checked=false;}"/></div>
-    <div class="mfield"><label>Farve</label>
-      <div style="display:flex;gap:6px;margin-top:3px">
-        <div class="bulk-rcp sel" style="width:22px;height:22px;border-radius:50%;background:#eab308;cursor:pointer;border:2px solid #fff;flex-shrink:0" onclick="setBulkRC('#eab308',this)"></div>
-        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#ef4444',this)"></div>
-        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#3b82f6',this)"></div>
-        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#22c55e',this)"></div>
-        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#000;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#000000',this)"></div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="ocr-use-bm" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Brug bogmærke-titel som søgeord</span></div>
-    <div id="ocr-bulk-results" style="max-height:160px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px"></div>
-  </div>
-  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-ocr-bulk')">Luk</button><button class="btn bPri bSm" onclick="runBulkOCRSearch()">🔍 Søg & Markér</button></div>
-</div></div>
-
 
 <!-- PREVIEW MODAL — Full document scrollable -->
 <div class="mbk" id="m-preview" style="align-items:stretch;padding:0">
@@ -2120,7 +2096,7 @@ async function runBulkOCRSearch(){
   const results=document.getElementById('ocr-bulk-results');results.innerHTML='';
   showProgress('OCR Markering',0,files.length);
   // Pre-initialize Tesseract worker
-  try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;}
+  if(!S.apiKey){ try{await getTessWorker();}catch(e){hideProgress();toast('OCR fejl: '+e.message,true);return;} }
   for(let fi=0;fi<files.length;fi++){
     if(S._cancelProgress)break;const f=files[fi];const fileIdx=S.files.indexOf(f);
     const term=useBm&&f._existingBms.length>0?f._existingBms[0].title:globalTerm;
@@ -2202,16 +2178,19 @@ async function runBulkOCRSearch(){
             const dpr=window.devicePixelRatio;
             const tNorm=termLow.replace(/[\s\-]/g,'');
 
-            // 1) Fast orientation check on a small render
+            // 1) Fast orientation check on a small render — ONLY for local Tesseract.
+            // Google Vision handles rotation + Japanese itself, so skip it there.
             let correction=0;
-            try{
-              const sv=pdfPage.getViewport({scale:1.4, rotation:baseRot});
-              const sc=Object.assign(document.createElement('canvas'),{width:sv.width,height:sv.height});
-              const sx=sc.getContext('2d'); sx.fillStyle='#fff'; sx.fillRect(0,0,sc.width,sc.height);
-              await pdfPage.render({canvasContext:sx,viewport:sv}).promise;
-              const corr=await detectPageOrientation(sc);
-              if(typeof corr==='number') correction=corr;
-            }catch(_){}
+            if(!S.apiKey){
+              try{
+                const sv=pdfPage.getViewport({scale:1.4, rotation:baseRot});
+                const sc=Object.assign(document.createElement('canvas'),{width:sv.width,height:sv.height});
+                const sx=sc.getContext('2d'); sx.fillStyle='#fff'; sx.fillRect(0,0,sc.width,sc.height);
+                await pdfPage.render({canvasContext:sx,viewport:sv}).promise;
+                const corr=await detectPageOrientation(sc);
+                if(typeof corr==='number') correction=corr;
+              }catch(_){}
+            }
             const finalRot=(baseRot+correction)%360;
             if(correction!==0){
               if(!f.pageRotations)f.pageRotations={};
@@ -3077,11 +3056,6 @@ function cancelProgress(){S._cancelProgress=true;hideProgress();}
 function switchRT(id){document.querySelectorAll('.rtab').forEach(t=>t.classList.toggle('active',t.dataset.rt===id));document.querySelectorAll('.rp').forEach(p=>p.classList.toggle('active',p.id==='rp-'+id));}
 function openM(id){
   document.getElementById(id).classList.add('open');
-  if(id==='m-ocr-bulk'){
-    setTimeout(()=>{ const t=document.getElementById('ocr-bulk-term'); if(t){ t.focus();
-      if(!t._enterWired){ t._enterWired=true; t.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); runBulkOCRSearch(); } }); }
-    } },60);
-  }
 }
 function closeM(id){document.getElementById(id).classList.remove('open');}
 
