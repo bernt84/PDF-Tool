@@ -1110,30 +1110,20 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
   <div class="mhd">🔍 OCR Markering — Bulk <button onclick="closeM('m-ocr-bulk')">✕</button></div>
   <div class="mbd">
     <div style="font-size:12px;color:var(--t2)">Søger i alle markerede filer og markerer teksten automatisk på alle sider.</div>
-    <div class="mfield"><label>Søgetekst</label><input class="minput" id="ocr-bulk-term" type="text" placeholder="F.eks. 84747041"/></div>
-    <div class="mfield"><label>Type</label>
-      <div style="display:flex;gap:12px;margin-top:3px">
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--t2);cursor:pointer">
-          <input type="radio" name="bulk-mark-type" value="highlight" checked onchange="S._ocrMarkType=this.value" style="accent-color:var(--acc)"/> Fremhæv (tekst synlig)
-        </label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--t2);cursor:pointer">
-          <input type="radio" name="bulk-mark-type" value="redact" onchange="S._ocrMarkType=this.value" style="accent-color:var(--acc)"/> Overstreg (tekst skjult)
-        </label>
-      </div>
-    </div>
+    <div class="mfield"><label>Søgetekst</label><input class="minput" id="ocr-bulk-term" type="text" placeholder="F.eks. 84747041" oninput="if(this.value.trim()){var t=document.getElementById('ocr-use-bm'); if(t)t.checked=false;}"/></div>
     <div class="mfield"><label>Farve</label>
       <div style="display:flex;gap:6px;margin-top:3px">
-        <div class="bulk-rcp sel" style="width:22px;height:22px;border-radius:50%;background:#000;cursor:pointer;border:2px solid #fff;flex-shrink:0" onclick="setBulkRC('#000000',this)"></div>
+        <div class="bulk-rcp sel" style="width:22px;height:22px;border-radius:50%;background:#eab308;cursor:pointer;border:2px solid #fff;flex-shrink:0" onclick="setBulkRC('#eab308',this)"></div>
         <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#ef4444',this)"></div>
         <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#3b82f6',this)"></div>
         <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#22c55e',this)"></div>
-        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#eab308;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#eab308',this)"></div>
+        <div class="bulk-rcp" style="width:22px;height:22px;border-radius:50%;background:#000;cursor:pointer;border:2px solid transparent;flex-shrink:0" onclick="setBulkRC('#000000',this)"></div>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px"><label class="tog"><input type="checkbox" id="ocr-use-bm" checked/><span class="tog-sl2"></span></label><span style="font-size:11px;color:var(--t2)">Brug bogmærke-titel som søgeord</span></div>
     <div id="ocr-bulk-results" style="max-height:160px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px"></div>
   </div>
-  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-ocr-bulk')">Luk</button><button class="btn bPri bSm" onclick="runBulkOCRSearch()">🔍 Søg & Overstreg</button></div>
+  <div class="mft"><button class="btn bGh bSm" onclick="closeM('m-ocr-bulk')">Luk</button><button class="btn bPri bSm" onclick="runBulkOCRSearch()">🔍 Søg & Markér</button></div>
 </div></div>
 
 
@@ -2203,47 +2193,71 @@ async function runBulkOCRSearch(){
               found++;
             });
           } else if(textItems.length < 8){
-            // Little or no real text layer = scanned page → real OCR (high-res, white bg)
+            // Little or no real text layer = scanned page → real OCR (high-res, white bg).
+            // The scan may be wrongly oriented, so try 0/90/180/270 until the term is found.
             if(!pdfPage) pdfPage=await f.pdfJsDoc.getPage(pg);
             const OCR_SCALE=2.5;
-            const pageRot=(f.pageRotations&&f.pageRotations[pg])||0;
-            const ovp=pdfPage.getViewport({scale:OCR_SCALE, rotation:pageRot});
-            const off=Object.assign(document.createElement('canvas'),{width:ovp.width,height:ovp.height});
-            const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
-            await pdfPage.render({canvasContext:octx,viewport:ovp}).promise;
-            const result=await runTesseract(off);
+            const baseRot=(f.pageRotations&&f.pageRotations[pg])||0;
             const dpr=window.devicePixelRatio;
-            // OCR bbox is in OCR-canvas px (scale OCR_SCALE). Annotations are stored
-            // in display px (scale S.zoom*dpr). Convert: multiply by ratio.
-            const sr=(S.zoom*dpr)/OCR_SCALE;
-            const words=result.words||[];
-            console.log('[OCRsearch] page',pg,'SCANNED → OCR found',words.length,'words | sample:',words.slice(0,15).map(w=>w.text).join('|'));
-            const tNorm=termLow.replace(/[\s\-]/g,'');   // ignore spaces AND hyphens
-            words.forEach((w,i)=>{
-              const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
-              const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
-              // cross-word: combine this word with the next few (handles "428834" "-01")
-              let cross=false, span=0;
-              if(!single){
+            const tNorm=termLow.replace(/[\s\-]/g,'');
+            const tryRots=[0,90,180,270];
+            let placed=0, usedRot=null, usedWords=null;
+            for(const extra of tryRots){
+              const totalRot=(baseRot+extra)%360;
+              const ovp=pdfPage.getViewport({scale:OCR_SCALE, rotation:totalRot});
+              const off=Object.assign(document.createElement('canvas'),{width:ovp.width,height:ovp.height});
+              const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
+              await pdfPage.render({canvasContext:octx,viewport:ovp}).promise;
+              const result=await runTesseract(off);
+              const words=result.words||[];
+              // does any word / cross-word run contain the term?
+              let hit=false;
+              for(let i=0;i<words.length;i++){
+                const wNorm=words[i].text.toLowerCase().replace(/[\s\-]/g,'');
+                if(wNorm.includes(tNorm)||words[i].text.toLowerCase().includes(termLow)){ hit=true; break; }
                 let comb='';
-                for(let j=i;j<words.length && j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ cross=true; span=j-i; break; } }
+                for(let j=i;j<words.length&&j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ hit=true; break; } }
+                if(hit) break;
               }
-              if(single||cross){
-                // mark this word (and spanned words if cross-match)
-                for(let k=i;k<=i+(cross?span:0) && k<words.length;k++){
-                  const ww=words[k];
-                  getAnnos(fileIdx,pg).push({
-                    type:(S._ocrMarkType||'highlight'),
-                    x:ww.bbox.x0*sr,y:ww.bbox.y0*sr,
-                    w:Math.max((ww.bbox.x1-ww.bbox.x0)*sr,10),
-                    h:Math.max((ww.bbox.y1-ww.bbox.y0)*sr,10),
-                    color:S.redactColor,strokeSize:1,
-                    opacity:(S._ocrMarkType==='redact'?1:0.5)
-                  });
+              console.log('[OCRsearch] page',pg,'rot',extra,'→',words.length,'words, hit:',hit,'| sample:',words.slice(0,12).map(w=>w.text).join('|'));
+              if(hit){ usedRot=extra; usedWords=words;
+                // If the page needs an extra rotation to read, apply it so the page
+                // displays right-side-up AND annotation coords line up.
+                if(extra!==0){
+                  if(!f.pageRotations)f.pageRotations={};
+                  f.pageRotations[pg]=(baseRot+extra)%360; f._hasRotation=true;
+                  if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fileIdx,pg,extra,baseRot); }catch(_){} }
                 }
-                found++;
+                break;
               }
-            });
+            }
+            if(usedWords){
+              // Re-render at the chosen (corrected) rotation to get bbox in that space.
+              const finalRot=(baseRot+(usedRot||0))%360;
+              const ovp2=pdfPage.getViewport({scale:OCR_SCALE, rotation:finalRot});
+              const sr=(S.zoom*dpr)/OCR_SCALE;
+              const words=usedWords;
+              words.forEach((w,i)=>{
+                const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
+                const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
+                let cross=false, span=0;
+                if(!single){ let comb='';
+                  for(let j=i;j<words.length && j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ cross=true; span=j-i; break; } } }
+                if(single||cross){
+                  for(let k=i;k<=i+(cross?span:0) && k<words.length;k++){
+                    const ww=words[k];
+                    getAnnos(fileIdx,pg).push({
+                      type:'highlight',
+                      x:ww.bbox.x0*sr,y:ww.bbox.y0*sr,
+                      w:Math.max((ww.bbox.x1-ww.bbox.x0)*sr,10),
+                      h:Math.max((ww.bbox.y1-ww.bbox.y0)*sr,10),
+                      color:S.redactColor,strokeSize:1, opacity:0.5
+                    });
+                  }
+                  found++; placed++;
+                }
+              });
+            }
           }
         }));
       }
