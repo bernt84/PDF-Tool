@@ -2140,9 +2140,10 @@ async function runBulkOCRSearch(){
         const end=Math.min(start+BATCH-1,numPages);
         updateProgress(fi+1,files.length,`${f.name} — side ${start}-${end}/${numPages}`);
 
-        // Process batch — get pages for viewport conversion
+        // Process pages sequentially (OCR worker can't run concurrent jobs).
         const batchPages=Array.from({length:end-start+1},(_,i)=>start+i);
-        await Promise.all(batchPages.map(async pg=>{
+        for(const pg of batchPages){
+          if(S._cancelProgress)break;
           // Get the page's text items: prefer cache, else fetch the text layer.
           let textItems = (f._textCache && f._textCache[pg]) ? f._textCache[pg] : null;
           let pdfPage=null;
@@ -2151,7 +2152,7 @@ async function runBulkOCRSearch(){
             const tc=await pdfPage.getTextContent();
             textItems = tc.items.map(it=>({ str:it.str, transform:it.transform, width:it.width, height:it.height }));
           }
-          console.log('[OCRsearch] page',pg,'| textItems:',textItems.length,'| term:',termLow,'| sample:',textItems.slice(0,8).map(t=>t.str).join('|'));
+          if(window.LA&&LA.DEBUG) console.log('[OCRsearch] page',pg,'| textItems:',textItems.length,'| term:',termLow,'| sample:',textItems.slice(0,8).map(t=>t.str).join('|'));
           // Direct per-item match (fast path)
           let matches=textItems.filter(item=>item.str && item.str.toLowerCase().includes(termLow));
           // Cross-item match: the term may be split across adjacent items (common in
@@ -2193,73 +2194,62 @@ async function runBulkOCRSearch(){
               found++;
             });
           } else if(textItems.length < 8){
-            // Little or no real text layer = scanned page → real OCR (high-res, white bg).
-            // The scan may be wrongly oriented, so try 0/90/180/270 until the term is found.
+            // Scanned page → real OCR. Detect orientation ONCE (fast OSD), correct the
+            // page, then OCR ONCE — instead of brute-forcing all four rotations.
             if(!pdfPage) pdfPage=await f.pdfJsDoc.getPage(pg);
             const OCR_SCALE=2.5;
             const baseRot=(f.pageRotations&&f.pageRotations[pg])||0;
             const dpr=window.devicePixelRatio;
             const tNorm=termLow.replace(/[\s\-]/g,'');
-            const tryRots=[0,90,180,270];
-            let placed=0, usedRot=null, usedWords=null;
-            for(const extra of tryRots){
-              const totalRot=(baseRot+extra)%360;
-              const ovp=pdfPage.getViewport({scale:OCR_SCALE, rotation:totalRot});
-              const off=Object.assign(document.createElement('canvas'),{width:ovp.width,height:ovp.height});
-              const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
-              await pdfPage.render({canvasContext:octx,viewport:ovp}).promise;
-              const result=await runTesseract(off);
-              const words=result.words||[];
-              // does any word / cross-word run contain the term?
-              let hit=false;
-              for(let i=0;i<words.length;i++){
-                const wNorm=words[i].text.toLowerCase().replace(/[\s\-]/g,'');
-                if(wNorm.includes(tNorm)||words[i].text.toLowerCase().includes(termLow)){ hit=true; break; }
-                let comb='';
-                for(let j=i;j<words.length&&j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ hit=true; break; } }
-                if(hit) break;
-              }
-              console.log('[OCRsearch] page',pg,'rot',extra,'→',words.length,'words, hit:',hit,'| sample:',words.slice(0,12).map(w=>w.text).join('|'));
-              if(hit){ usedRot=extra; usedWords=words;
-                // If the page needs an extra rotation to read, apply it so the page
-                // displays right-side-up AND annotation coords line up.
-                if(extra!==0){
-                  if(!f.pageRotations)f.pageRotations={};
-                  f.pageRotations[pg]=(baseRot+extra)%360; f._hasRotation=true;
-                  if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fileIdx,pg,extra,baseRot); }catch(_){} }
-                }
-                break;
-              }
+
+            // 1) Fast orientation check on a small render
+            let correction=0;
+            try{
+              const sv=pdfPage.getViewport({scale:1.4, rotation:baseRot});
+              const sc=Object.assign(document.createElement('canvas'),{width:sv.width,height:sv.height});
+              const sx=sc.getContext('2d'); sx.fillStyle='#fff'; sx.fillRect(0,0,sc.width,sc.height);
+              await pdfPage.render({canvasContext:sx,viewport:sv}).promise;
+              const corr=await detectPageOrientation(sc);
+              if(typeof corr==='number') correction=corr;
+            }catch(_){}
+            const finalRot=(baseRot+correction)%360;
+            if(correction!==0){
+              if(!f.pageRotations)f.pageRotations={};
+              f.pageRotations[pg]=finalRot; f._hasRotation=true;
+              if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(fileIdx,pg,correction,baseRot); }catch(_){} }
             }
-            if(usedWords){
-              // Re-render at the chosen (corrected) rotation to get bbox in that space.
-              const finalRot=(baseRot+(usedRot||0))%360;
-              const ovp2=pdfPage.getViewport({scale:OCR_SCALE, rotation:finalRot});
-              const sr=(S.zoom*dpr)/OCR_SCALE;
-              const words=usedWords;
-              words.forEach((w,i)=>{
-                const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
-                const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
-                let cross=false, span=0;
-                if(!single){ let comb='';
-                  for(let j=i;j<words.length && j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ cross=true; span=j-i; break; } } }
-                if(single||cross){
-                  for(let k=i;k<=i+(cross?span:0) && k<words.length;k++){
-                    const ww=words[k];
-                    getAnnos(fileIdx,pg).push({
-                      type:'highlight',
-                      x:ww.bbox.x0*sr,y:ww.bbox.y0*sr,
-                      w:Math.max((ww.bbox.x1-ww.bbox.x0)*sr,10),
-                      h:Math.max((ww.bbox.y1-ww.bbox.y0)*sr,10),
-                      color:S.redactColor,strokeSize:1, opacity:0.5
-                    });
-                  }
-                  found++; placed++;
+
+            // 2) High-res render at corrected rotation, single OCR pass
+            const ovp=pdfPage.getViewport({scale:OCR_SCALE, rotation:finalRot});
+            const off=Object.assign(document.createElement('canvas'),{width:ovp.width,height:ovp.height});
+            const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
+            await pdfPage.render({canvasContext:octx,viewport:ovp}).promise;
+            const result=await runTesseract(off);
+            const words=result.words||[];
+            const sr=(S.zoom*dpr)/OCR_SCALE;
+            if(window.LA&&LA.DEBUG) console.log('[OCRsearch] page',pg,'corr',correction,'→',words.length,'words | sample:',words.slice(0,12).map(w=>w.text).join('|'));
+            words.forEach((w,i)=>{
+              const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
+              const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
+              let cross=false, span=0;
+              if(!single){ let comb='';
+                for(let j=i;j<words.length && j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ cross=true; span=j-i; break; } } }
+              if(single||cross){
+                for(let k=i;k<=i+(cross?span:0) && k<words.length;k++){
+                  const ww=words[k];
+                  getAnnos(fileIdx,pg).push({
+                    type:'highlight',
+                    x:ww.bbox.x0*sr,y:ww.bbox.y0*sr,
+                    w:Math.max((ww.bbox.x1-ww.bbox.x0)*sr,10),
+                    h:Math.max((ww.bbox.y1-ww.bbox.y0)*sr,10),
+                    color:S.redactColor,strokeSize:1, opacity:0.5
+                  });
                 }
-              });
-            }
+                found++;
+              }
+            });
           }
-        }));
+        }
       }
 
       f._ocrSearched=true;f._hasOcr=found>0;
@@ -3085,7 +3075,14 @@ function updateProgress(cur,tot,sub){document.getElementById('pb-sub').textConte
 function hideProgress(){document.getElementById('progress-wrap').classList.remove('show');}
 function cancelProgress(){S._cancelProgress=true;hideProgress();}
 function switchRT(id){document.querySelectorAll('.rtab').forEach(t=>t.classList.toggle('active',t.dataset.rt===id));document.querySelectorAll('.rp').forEach(p=>p.classList.toggle('active',p.id==='rp-'+id));}
-function openM(id){document.getElementById(id).classList.add('open');}
+function openM(id){
+  document.getElementById(id).classList.add('open');
+  if(id==='m-ocr-bulk'){
+    setTimeout(()=>{ const t=document.getElementById('ocr-bulk-term'); if(t){ t.focus();
+      if(!t._enterWired){ t._enterWired=true; t.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); runBulkOCRSearch(); } }); }
+    } },60);
+  }
+}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 
 function clearAll(){
