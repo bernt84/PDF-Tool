@@ -689,6 +689,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="switchRT('meta');closeMenus()">📝 Metadata…</div>
         <div class="mb-item" onclick="openM('m-pwd');closeMenus()">🔒 Lås PDF…</div>
         <div class="mb-sep"></div>
+        <div class="mb-item" onclick="psClearAll();closeMenus()">🗑 Ryd auto-gemte data</div>
+        <div class="mb-sep"></div>
       </div>
     </div>
   </div>
@@ -1401,6 +1403,7 @@ async function handleFiles(newFiles){
   if(S.files.length===1&&S.activeIdx===-1)await openFile(0);
   if(S._mode==='list')renderListMode();
   setTimeout(()=>analyzeBulkSilent(),300);
+  if(typeof psScheduleSave==='function') psScheduleSave();
 }
 
 function getAnnos(fi,pg){if(!S.annos[fi])S.annos[fi]={};if(!S.annos[fi][pg])S.annos[fi][pg]=[];return S.annos[fi][pg];}
@@ -1689,6 +1692,7 @@ function finishTextInput(cancel=false){
 function undoAnno(){const a=getAnnos(S.activeIdx,S.page);if(a.length>0){a.pop();redrawAnnos();renderAnnoList();}}
 function clearPageAnnos(){getAnnos(S.activeIdx,S.page).splice(0);redrawAnnos();renderAnnoList();}
 function renderAnnoList(){
+  if(typeof psScheduleSave==='function') psScheduleSave();
   const list=document.getElementById('anno-list');const annos=getAnnos(S.activeIdx,S.page);
   if(!annos.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px">Ingen annotationer</div>';return;}
   const labels={highlight:'Fremhæv',redact:'Overstreg',pen:'Frihånd',text:'Tekst',rect:'Kasse',circle:'Cirkel',line:'Linje',arrow:'Pil',image:'Billede'};
@@ -2363,6 +2367,7 @@ async function rotateSingle(dir){
     await renderPage();
     zoomFit();
     toast('Side '+S.page+' roteret ✓','ok');
+    if(typeof psScheduleSave==='function') psScheduleSave();
   } catch(e) {
     console.error('Rotate error:',e);
     toast('Fejl: '+e.message,true);
@@ -5003,6 +5008,226 @@ async function extractText() {
 
 </script>
 <script>
+/* === Auto-save / restore (injected) === */
+// ============================================================================
+// AUTO-SAVE / RESTORE  (IndexedDB)
+// Saves all open files (PDF bytes + rotations + deleted pages + annotations)
+// so work survives a crash or accidental tab close. Shows a popup when storage
+// is full, with the option to clear all PDF Tool data.
+// ============================================================================
+const PSTORE = {
+  DB: 'ptp_autosave', STORE: 'files', META: 'meta',
+  _db: null, _saveTimer: null, _enabled: true, _warned: false,
+};
+
+function psOpen(){
+  return new Promise((resolve,reject)=>{
+    if(PSTORE._db) return resolve(PSTORE._db);
+    const req = indexedDB.open(PSTORE.DB, 1);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(PSTORE.STORE)) db.createObjectStore(PSTORE.STORE, {keyPath:'id'});
+      if(!db.objectStoreNames.contains(PSTORE.META)) db.createObjectStore(PSTORE.META, {keyPath:'k'});
+    };
+    req.onsuccess = ()=>{ PSTORE._db = req.result; resolve(req.result); };
+    req.onerror = ()=> reject(req.error);
+  });
+}
+
+function psTx(store, mode){
+  return PSTORE._db.transaction(store, mode).objectStore(store);
+}
+
+// Estimate storage usage; returns {usage,quota,pct} or null if unavailable.
+async function psQuota(){
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const est = await navigator.storage.estimate();
+      const usage=est.usage||0, quota=est.quota||0;
+      return { usage, quota, pct: quota? usage/quota : 0 };
+    }
+  }catch(e){}
+  return null;
+}
+
+// Serialize one file into a storable record.
+function psSerializeFile(f, idx){
+  const annos = (typeof S!=='undefined' && S.annos && S.annos[idx]) ? S.annos[idx] : {};
+  // strip non-serializable bits from old-system annotations (e.g. _img element)
+  const annosClean = {};
+  Object.keys(annos||{}).forEach(pg=>{
+    annosClean[pg] = (annos[pg]||[]).map(a=>{ const c=Object.assign({},a); delete c._img; return c; });
+  });
+  const laObjs = (typeof LA!=='undefined' && LA.objectsByPage && LA.objectsByPage[idx]) ? LA.objectsByPage[idx] : {};
+  // laObjectsByPage entries are arrays with a _zoom prop; store plain
+  const laClean = {};
+  Object.keys(laObjs||{}).forEach(pg=>{ laClean[pg] = { objs: laObjs[pg].slice(0), zoom: laObjs[pg]._zoom||1 }; });
+  return {
+    id: idx,
+    name: f.name,
+    buf: f.buf,                       // ArrayBuffer — IndexedDB stores it natively
+    pageRotations: f.pageRotations||{},
+    deletedPages: Array.from(f.deletedPages||[]),
+    groupId: f.groupId!=null?f.groupId:null,
+    annos: annosClean,
+    la: laClean,
+    savedAt: Date.now(),
+  };
+}
+
+// Save all open files (debounced entry point: psScheduleSave).
+async function psSaveAll(){
+  if(!PSTORE._enabled) return;
+  if(typeof S==='undefined' || !S.files || !S.files.length) return;
+  try{
+    await psOpen();
+    // Quota pre-check
+    const q = await psQuota();
+    if(q && q.pct > 0.95){ psHandleFull(); return; }
+    const store = psTx(PSTORE.STORE, 'readwrite');
+    // Clear then rewrite (simplest consistent snapshot)
+    store.clear();
+    S.files.forEach((f,idx)=>{ try{ store.put(psSerializeFile(f, idx)); }catch(e){ if(window.LA&&LA.DEBUG)console.warn('[PS] put',e); } });
+    const meta = psTx(PSTORE.META, 'readwrite');
+    meta.put({k:'state', activeIdx:S.activeIdx, page:S.page, count:S.files.length, savedAt:Date.now()});
+    if(window.LA&&LA.DEBUG) console.log('[PS] saved',S.files.length,'file(s)');
+  }catch(e){
+    if(e && (e.name==='QuotaExceededError' || /quota/i.test(e.message||''))) psHandleFull();
+    else if(window.LA&&LA.DEBUG) console.warn('[PS] save failed',e);
+  }
+}
+
+let _psSaveInFlight=false;
+function psScheduleSave(){
+  if(!PSTORE._enabled) return;
+  clearTimeout(PSTORE._saveTimer);
+  PSTORE._saveTimer = setTimeout(async ()=>{
+    if(_psSaveInFlight) { psScheduleSave(); return; }
+    _psSaveInFlight=true;
+    try{ await psSaveAll(); } finally { _psSaveInFlight=false; }
+  }, 1500);
+}
+window.psScheduleSave = psScheduleSave;
+
+// Load saved records (for restore).
+async function psLoadAll(){
+  await psOpen();
+  return new Promise((resolve)=>{
+    const out=[]; const req = psTx(PSTORE.STORE,'readonly').openCursor();
+    req.onsuccess = (e)=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else resolve(out.sort((a,b)=>a.id-b.id)); };
+    req.onerror = ()=> resolve([]);
+  });
+}
+
+// Clear ALL PDF Tool autosave data.
+async function psClearAll(){
+  try{
+    await psOpen();
+    psTx(PSTORE.STORE,'readwrite').clear();
+    psTx(PSTORE.META,'readwrite').clear();
+    PSTORE._warned=false;
+    if(typeof toast==='function') toast('Gemte data ryddet ✓','ok');
+  }catch(e){ if(typeof toast==='function') toast('Kunne ikke rydde data',true); }
+}
+window.psClearAll = psClearAll;
+
+// Popup when storage is full.
+function psHandleFull(){
+  if(PSTORE._warned) return;
+  PSTORE._warned = true;
+  psShowDialog(
+    'Lageret er fyldt',
+    'Browserens lager til auto-gem er fyldt op. Vil du rydde alle PDF Tool-gemte data for at frigøre plads? Dette sletter kun denne apps gemte filer — intet andet i din browser påvirkes.',
+    [
+      { label:'Ryd alt PDF Tool-data', kind:'danger', action: async ()=>{ await psClearAll(); psScheduleSave(); } },
+      { label:'Annullér (gem ikke)', kind:'ghost', action: ()=>{ PSTORE._enabled=false; if(typeof toast==='function') toast('Auto-gem sat på pause','ok'); } },
+    ]
+  );
+}
+
+// Restore prompt on startup if saved files exist and none are currently open.
+async function psMaybeRestore(){
+  try{
+    await psOpen();
+    const recs = await psLoadAll();
+    if(!recs.length) return;
+    if(typeof S!=='undefined' && S.files && S.files.length>0) return; // user already has files open
+    psShowDialog(
+      'Gendan tidligere arbejde?',
+      'Der blev fundet '+recs.length+' gemt fil(er) fra sidste gang. Vil du gendanne dem med dine annoteringer og rotationer?',
+      [
+        { label:'Gendan', kind:'primary', action: ()=> psRestoreFiles(recs) },
+        { label:'Start forfra', kind:'ghost', action: ()=>{} },
+        { label:'Slet gemte data', kind:'danger', action: ()=> psClearAll() },
+      ]
+    );
+  }catch(e){ if(window.LA&&LA.DEBUG)console.warn('[PS] restore check',e); }
+}
+
+// Rebuild S.files / S.annos / LA.objectsByPage from saved records.
+async function psRestoreFiles(recs){
+  try{
+    for(const r of recs){
+      const buf = r.buf;   // ArrayBuffer
+      const fileObj = {
+        name: r.name, buf: buf.slice(0), pdfJsDoc:null, pdfLibDoc:null, rotation:0,
+        bulkSel:true, bulkStatus:'pending', bulkAction:'keep', bulkNewBm:null, _existingBms:[],
+        groupId: r.groupId!=null?r.groupId:null, pendingRotation:0,
+        deletedPages: new Set(r.deletedPages||[]), pageRotations: r.pageRotations||{},
+        _viewRotation:0, _hasBm:false, _hasOcr:false, _hasRotation: Object.keys(r.pageRotations||{}).length>0
+      };
+      const idx = S.files.length;
+      S.files.push(fileObj);
+      // restore annotations
+      if(r.annos){ if(!S.annos[idx]) S.annos[idx]={}; Object.keys(r.annos).forEach(pg=>{ S.annos[idx][pg]=r.annos[pg]; }); }
+      if(r.la && typeof LA!=='undefined'){ if(!LA.objectsByPage[idx]) LA.objectsByPage[idx]={};
+        Object.keys(r.la).forEach(pg=>{ const arr=(r.la[pg].objs||[]).slice(0); arr._zoom=r.la[pg].zoom||1; LA.objectsByPage[idx][pg]=arr; }); }
+    }
+    if(typeof renderFileList==='function') renderFileList();
+    if(typeof updateBulkSum==='function') updateBulkSum();
+    const btnA=document.getElementById('btn-ana'); if(btnA) btnA.disabled=false;
+    const btnB=document.getElementById('btn-bsv'); if(btnB) btnB.disabled=false;
+    if(S.files.length && S.activeIdx===-1 && typeof openFile==='function') await openFile(0);
+    if(typeof toast==='function') toast('Gendannet '+recs.length+' fil(er) ✓','ok');
+  }catch(e){ if(typeof toast==='function') toast('Gendannelse fejlede',true); if(window.LA&&LA.DEBUG)console.error('[PS] restore',e); }
+}
+
+// Minimal modal dialog (uses inline styles to avoid depending on app CSS).
+function psShowDialog(title, body, buttons){
+  const ex=document.getElementById('ps-dialog'); if(ex) ex.remove();
+  const wrap=document.createElement('div'); wrap.id='ps-dialog';
+  wrap.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#1e1e24;color:#f4f4f5;border:1px solid #3a3a44;border-radius:12px;max-width:440px;width:90%;padding:22px;font-family:Segoe UI,system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5);';
+  const h=document.createElement('div'); h.textContent=title; h.style.cssText='font-size:17px;font-weight:700;margin-bottom:10px;';
+  const p=document.createElement('div'); p.textContent=body; p.style.cssText='font-size:13px;line-height:1.5;color:#c7c7cc;margin-bottom:18px;';
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
+  buttons.forEach(b=>{
+    const btn=document.createElement('button'); btn.textContent=b.label;
+    const base='padding:8px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;';
+    const styles={ primary:'background:#e85d2f;color:#fff;', danger:'background:#3a1e1e;color:#ff6b6b;border-color:#5a2a2a;', ghost:'background:transparent;color:#c7c7cc;border-color:#3a3a44;' };
+    btn.style.cssText = base + (styles[b.kind]||styles.ghost);
+    btn.onclick = async ()=>{ wrap.remove(); if(b.action) await b.action(); };
+    row.appendChild(btn);
+  });
+  box.appendChild(h); box.appendChild(p); box.appendChild(row); wrap.appendChild(box);
+  document.body.appendChild(wrap);
+}
+window.psShowDialog = psShowDialog;
+
+// Warn on tab close if there are open files (work is auto-saved, but flush first).
+window.addEventListener('beforeunload', (e)=>{
+  if(typeof S!=='undefined' && S.files && S.files.length){
+    try{ psSaveAll(); }catch(_){}
+  }
+});
+
+// Kick off restore check after load.
+window.addEventListener('load', ()=>{ setTimeout(()=>{ psMaybeRestore(); }, 1200); });
+
+</script>
+
+<script>
 /* === Fabric annotation engine (injected) === */
 // ============================================================================
 // FABRIC ANNOTATION ENGINE  (replaces the hand-rolled DOM overlay)
@@ -5146,6 +5371,7 @@ function laPersist(){
   const arr=c.getObjects().map(o=>o.toObject(LA_PROPS));
   arr._zoom = S.zoom;   // remember the display scale these pixel coords belong to
   LA.objectsByPage[S.activeIdx][S.page]=arr;
+  if(typeof psScheduleSave==='function') psScheduleSave();
 }
 
 // ---- Undo / Redo history (per active page) ---------------------------------
