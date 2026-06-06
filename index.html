@@ -1562,7 +1562,7 @@ function setTool(t){
   const ind=document.getElementById('mb-tool-lbl');if(ind)ind.textContent=names[t]||t;
 }
 // Tools handled by the LiveAnno layer (vs. the legacy canvas system)
-const LIVE_TOOLS=['rect','circle','text','arrow','line','highlight'];
+const LIVE_TOOLS=['rect','circle','text','arrow','line','highlight','redact','pen'];
 function setColor(c,el){S.color=c;document.querySelectorAll('#menubar .color-pick').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
 function setRedactColor(c,el){S.redactColor=c;document.querySelectorAll('.redact-cp').forEach(p=>p.classList.remove('sel'));el.classList.add('sel');}
 function setBulkRC(c,el){S.redactColor=c;document.querySelectorAll('.bulk-rcp').forEach(p=>p.style.border='2px solid transparent');el.style.border='2px solid #fff';}
@@ -2794,6 +2794,11 @@ async function bakeLiveAnno(doc,page,a,pW,pH){
   if(a.type==='polystroke'){          // rect outline or ellipse (stroked polygon)
     const d=svgPathFromPts(a._pts,true);
     try{ page.drawSvgPath(d,{x:0,y:pageH,borderColor:color,borderWidth:th,borderDashArray:dashArray,opacity}); }catch(e){ if(LA&&LA.DEBUG)console.error('polystroke',e); }
+    return;
+  }
+  if(a.type==='polyline'){            // freehand pen stroke (open path)
+    const d=svgPathFromPts(a._pts,false);
+    try{ page.drawSvgPath(d,{x:0,y:pageH,borderColor:color,borderWidth:th,opacity}); }catch(e){ if(LA&&LA.DEBUG)console.error('polyline',e); }
     return;
   }
   if(a.type==='text'){
@@ -4999,7 +5004,7 @@ const LA = {
   DASHES: [['solid','Hel'],['dashed','Stiplet'],['dotted','Punkteret']],
   FONTS: ['Helvetica','Times','Courier'],
   FONT_CSS: { Helvetica:'Helvetica, Arial, sans-serif', Times:'"Times New Roman", Times, serif', Courier:'"Courier New", Courier, monospace' },
-  TOOLS: ['rect','circle','text','arrow','line','highlight'],
+  TOOLS: ['rect','circle','text','arrow','line','highlight','redact','pen'],
   DEBUG: true,
 };
 function laIsTool(t){ return LA.TOOLS.indexOf(t)>=0; }
@@ -5046,6 +5051,14 @@ function laWireCanvasEvents(){
   c.on('object:scaling', laPositionBar);
   c.on('object:rotating', laPositionBar);
   c.on('text:changed', ()=>laPersist());
+  c.on('path:created', (e)=>{
+    const path=e.path; if(!path) return;
+    path.laType='pen'; path.laColor=(c.freeDrawingBrush&&c.freeDrawingBrush.color)||S.color||'#dc2626';
+    path.laStroke=(c.freeDrawingBrush&&c.freeDrawingBrush.width)||S.strokeSize||3;
+    path.objectCaching=false; path.fill=null;
+    laPersist();
+    if(LA.DEBUG) console.log('[LA draw] pen path created');
+  });
 }
 
 // Resize the fabric canvas to match the pdf render (CSS px) and rebuild objects.
@@ -5068,14 +5081,21 @@ document.addEventListener('scroll', laRecalcOffset, true);
 function laApplyToolMode(){
   const c=LA.canvas; if(!c) return;
   const live=laIsTool(S.tool);
-  // Capture pointer on the Fabric layer only for Fabric-owned tools, or for the
-  // select tool when there are objects to grab. Old tools (pen/redact/image) must
-  // pass through to #anno-canvas, so don't capture for them.
+  // Capture pointer on the Fabric layer for Fabric-owned tools, or for select when
+  // there are objects to grab.
   const cap = live || (S.tool==='select' && (c.getActiveObject() || laCurrentList().length>0));
   c.wrapperEl.style.pointerEvents = (S.activeIdx>=0 && cap)?'auto':'none';
   c.defaultCursor = live?'crosshair':'default';
-  // Always allow selection of existing objects, even while a drawing tool is active.
-  c.selection = true;
+  // Pen → Fabric free-drawing mode (produces a fabric.Path we can rotate/persist).
+  if(S.tool==='pen'){
+    c.isDrawingMode = true;
+    if(!c.freeDrawingBrush) c.freeDrawingBrush = new fabric.PencilBrush(c);
+    c.freeDrawingBrush.color = S.color || '#dc2626';
+    c.freeDrawingBrush.width = Math.max(1, S.strokeSize||3);
+  } else {
+    c.isDrawingMode = false;
+  }
+  c.selection = (S.tool==='select');
   c.forEachObject(o=>{ o.selectable = true; o.evented = true; });
   c.requestRenderAll();
 }
@@ -5101,7 +5121,7 @@ function laCurrentList(){
   if(!LA.objectsByPage[S.activeIdx][S.page]) LA.objectsByPage[S.activeIdx][S.page]=[];
   return LA.objectsByPage[S.activeIdx][S.page];
 }
-const LA_PROPS=['laType','laColor','laStroke','laDash','laOpacity','laFont','laBold','laItalic','laHeadStart','laHeadEnd','laText'];
+const LA_PROPS=['laType','laColor','laStroke','laDash','laOpacity','laFont','laBold','laItalic','laHeadStart','laHeadEnd','laText','path','pathOffset'];
 function laPersist(){
   const c=LA.canvas; if(!c) return;
   const arr=c.getObjects().map(o=>o.toObject(LA_PROPS));
@@ -5118,6 +5138,9 @@ function laRescaleList(list, fromZoom, toZoom){
       s.strokeWidth=(s.strokeWidth||1);   // keep stroke visual weight roughly stable
     } else if(s.laType==='circle'){
       s.left*=k; s.top*=k; s.rx=(s.rx||0)*k; s.ry=(s.ry||0)*k;
+    } else if(s.laType==='pen'){
+      // Path geometry lives in scaleX/scaleY; scale those and the origin.
+      s.left*=k; s.top*=k; s.scaleX=(s.scaleX||1)*k; s.scaleY=(s.scaleY||1)*k;
     } else {
       s.left*=k; s.top*=k; s.width=(s.width||0)*k; s.height=(s.height||0)*k;
       if(s.laType==='text' && s.fontSize) s.fontSize*=k;
@@ -5174,7 +5197,18 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
       const nrx=swap?ry:rx, nry=swap?rx:ry;
       s.rx=nrx; s.ry=nry; s.scaleX=1; s.scaleY=1;
       s.left=ncx-nrx; s.top=ncy-nry;
+    } else if(s.laType==='pen'){
+      // Fabric Path: transform its bounding-box origin through the viewport, swap
+      // W/H on 90/270, and add the rotation delta to the object's angle so the
+      // stroke shape rotates with the page.
+      const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
+      const [ax,ay]=remap(s.left,s.top);
+      const [bx,by]=remap(s.left+w,s.top+h);
+      s.left=Math.min(ax,bx); s.top=Math.min(ay,by);
+      s.angle=(((s.angle||0)+deltaDeg)%360+360)%360;
+      s.scaleX=s.scaleX||1; s.scaleY=s.scaleY||1;
     } else {
+      // rect, highlight, redact, text — transform two opposite corners, rebuild AABB
       const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
       const [ax,ay]=remap(s.left,s.top);
       const [bx,by]=remap(s.left+w,s.top+h);
@@ -5188,7 +5222,6 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
         ? 'pts('+Math.round(s.x1)+','+Math.round(s.y1)+')->('+Math.round(s.x2)+','+Math.round(s.y2)+')'
         : 'L/T/W/H '+Math.round(s.left)+','+Math.round(s.top)+','+Math.round((s.width||s.rx*2||0))+','+Math.round((s.height||s.ry*2||0));
       const ow=oldVp.width, oh=oldVp.height, nw2=newVp.width, nh2=newVp.height;
-      const fracOld = 'old%('+(s.laType==='line'||s.laType==='arrow'?'':((s.left/ow*100).toFixed(0)+','+(s.top/oh*100).toFixed(0)))+')';
       const fracNew = 'new%('+((s.left/nw2*100).toFixed(0)+','+(s.top/nh2*100).toFixed(0))+')';
       console.log('[LA remapList]   '+s.laType+': '+_b+'  =>  '+_a+'   '+fracNew);
     }
@@ -5268,6 +5301,12 @@ function laMakeEllipse(x,y,w,h,st){
     fill:'transparent', stroke:st.color, strokeWidth:st.stroke, strokeDashArray:laDashArr(st.dash,st.stroke),
     objectCaching:false, laType:'circle', laColor:st.color, laStroke:st.stroke, laDash:st.dash });
 }
+function laMakeRedact(x,y,w,h,st){
+  // Solid opaque rectangle that covers content (redaction / overstregning).
+  return new fabric.Rect({ left:x, top:y, width:w, height:h,
+    fill:'#000000', stroke:null, strokeWidth:0, opacity:1, objectCaching:false,
+    laType:'redact', laColor:'#000000', laStroke:0, laOpacity:1 });
+}
 function laMakeText(x,y,st){
   const t=new fabric.Textbox('Tekst',{ left:x, top:y, fontSize:st.fontSize, fill:st.color,
     fontFamily:LA.FONT_CSS['Helvetica'], width:120, editable:true, objectCaching:false,
@@ -5293,10 +5332,12 @@ function laMouseDown(opt){
   const p=c.getScenePoint(opt.e);
   if(LA.DEBUG){ const r=c.wrapperEl.getBoundingClientRect(); const e=opt.e;
     console.log('[LA pointer] client('+Math.round(e.clientX)+','+Math.round(e.clientY)+') wrapper('+Math.round(r.left)+','+Math.round(r.top)+') scene('+Math.round(p.x)+','+Math.round(p.y)+') expected~('+Math.round(e.clientX-r.left)+','+Math.round(e.clientY-r.top)+')'); }
+  if(S.tool==='pen') return;              // pen uses Fabric free-drawing mode (see laApplyToolMode)
   const st=laStyleFor();
   let obj;
   if(S.tool==='rect') obj=laMakeRect(p.x,p.y,1,1,st,false);
   else if(S.tool==='highlight') { st.color=S.color||'#fde047'; st.opacity=0.32; obj=laMakeRect(p.x,p.y,1,1,st,true); }
+  else if(S.tool==='redact') { obj=laMakeRedact(p.x,p.y,1,1,st); }
   else if(S.tool==='circle') obj=laMakeEllipse(p.x,p.y,1,1,st);
   else if(S.tool==='line') obj=laMakeLine(p.x,p.y,p.x,p.y,st,false);
   else if(S.tool==='arrow') obj=laMakeLine(p.x,p.y,p.x,p.y,st,true);
@@ -5493,13 +5534,39 @@ function laSerializedToAnno(s, fileIdx, pg){
     return Object.assign(base,{ type:s.laType, _x1:a1x,_y1:a1y,_x2:a2x,_y2:a2y,
       headStart:s.laHeadStart||'none', headEnd:s.laHeadEnd||'none' });
   }
-  if(s.laType==='highlight'||s.laType==='rect'){
+  if(s.laType==='highlight'||s.laType==='rect'||s.laType==='redact'){
     const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
     const corners = laRectCornersCanvas(s.left, s.top, w, h, s.angle||0);
     const pdfPts = corners.map(c=>{ const p=laScreenToPdf(c[0],c[1]); return [p[0],p[1]]; });
-    if(LA.DEBUG) console.log('[LA bake]   rect canvas corners:',corners.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '),'=> pdf:',pdfPts.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '));
-    return Object.assign(base,{ type:s.laType==='highlight'?'polyfill':'polystroke',
-      _pts:pdfPts, opacity:(s.laType==='highlight')?(s.laOpacity||s.opacity||0.32):1 });
+    if(LA.DEBUG) console.log('[LA bake]   '+s.laType+' canvas corners:',corners.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '),'=> pdf:',pdfPts.map(c=>'('+Math.round(c[0])+','+Math.round(c[1])+')').join(' '));
+    const filled = (s.laType==='highlight'||s.laType==='redact');
+    return Object.assign(base,{ type: filled?'polyfill':'polystroke',
+      _pts:pdfPts,
+      color: s.laType==='redact'?'#000000':col,
+      opacity:(s.laType==='highlight')?(s.laOpacity||s.opacity||0.32):1 });
+  }
+  if(s.laType==='pen'){
+    // Sample the Fabric path's points (in object-local coords), apply the object's
+    // transform (scale + angle + translate) to canvas space, then to PDF.
+    const pathArr = s.path||[]; const sx=s.scaleX||1, sy=s.scaleY||1;
+    const ang=(s.angle||0)*Math.PI/180;
+    // Fabric path coords are relative to the path's own bounding box; pathOffset
+    // holds the local origin. Reconstruct absolute canvas points.
+    const ox=(s.pathOffset&&s.pathOffset.x)||0, oy=(s.pathOffset&&s.pathOffset.y)||0;
+    const pts=[];
+    pathArr.forEach(cmd=>{
+      // cmd like ['M',x,y] or ['Q',cx,cy,x,y] or ['L',x,y]
+      for(let i=1;i<cmd.length;i+=2){
+        const lx=cmd[i]-ox, ly=cmd[i+1]-oy;
+        const scx=lx*sx, scy=ly*sy;
+        const rx=scx*Math.cos(ang)-scy*Math.sin(ang), ry=scx*Math.sin(ang)+scy*Math.cos(ang);
+        const cx=s.left+rx, cy=s.top+ry;
+        const p=laScreenToPdf(cx,cy); pts.push([p[0],p[1]]);
+      }
+    });
+    if(pts.length<2) return null;
+    if(LA.DEBUG) console.log('[LA bake]   pen path with',pts.length,'points');
+    return Object.assign(base,{ type:'polyline', _pts:pts, color:col, strokeSize:s.laStroke||s.strokeWidth||3 });
   }
   if(s.laType==='circle'){
     const rx=(s.rx||0)*(s.scaleX||1), ry=(s.ry||0)*(s.scaleY||1);
