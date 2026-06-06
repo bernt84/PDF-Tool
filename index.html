@@ -2153,11 +2153,36 @@ async function runBulkOCRSearch(){
         // Process batch — get pages for viewport conversion
         const batchPages=Array.from({length:end-start+1},(_,i)=>start+i);
         await Promise.all(batchPages.map(async pg=>{
-          const textItems=f._textCache&&f._textCache[pg] ? f._textCache[pg] : [];
-          const matches=textItems.filter(item=>item.str&&item.str.toLowerCase().includes(termLow));
+          // Get the page's text items: prefer cache, else fetch the text layer.
+          let textItems = (f._textCache && f._textCache[pg]) ? f._textCache[pg] : null;
+          let pdfPage=null;
+          if(!textItems){
+            pdfPage=await f.pdfJsDoc.getPage(pg);
+            const tc=await pdfPage.getTextContent();
+            textItems = tc.items.map(it=>({ str:it.str, transform:it.transform, width:it.width, height:it.height }));
+          }
+          // Direct per-item match (fast path)
+          let matches=textItems.filter(item=>item.str && item.str.toLowerCase().includes(termLow));
+          // Cross-item match: the term may be split across adjacent items (common in
+          // tables, e.g. "428834" + "-01"). Find runs of consecutive items whose
+          // concatenated text contains the term, and mark those items.
+          if(!matches.length && textItems.length){
+            const extra=[];
+            for(let i=0;i<textItems.length;i++){
+              let combined='';
+              for(let j=i;j<textItems.length && j<i+6;j++){
+                combined += (textItems[j].str||'');
+                const norm=combined.toLowerCase().replace(/\s+/g,'');
+                if(norm.includes(termLow.replace(/\s+/g,''))){
+                  for(let k=i;k<=j;k++) if(textItems[k].str && textItems[k].str.trim()) extra.push(textItems[k]);
+                  break;
+                }
+              }
+            }
+            matches = extra;
+          }
           if(matches.length>0){
-            // Get page for proper coord conversion
-            const pdfPage=await f.pdfJsDoc.getPage(pg);
+            if(!pdfPage) pdfPage=await f.pdfJsDoc.getPage(pg);
             const vp=pdfPage.getViewport({scale:1.0});
             const dpr=window.devicePixelRatio;
             matches.forEach(item=>{
@@ -2177,29 +2202,34 @@ async function runBulkOCRSearch(){
               found++;
             });
           } else if(textItems.length===0){
-            // No text cache = possibly scanned page
-            const pdfPage=await f.pdfJsDoc.getPage(pg);
-            const tc=await pdfPage.getTextContent();
-            if(!tc.items.length){
-              // Truly scanned — use OCR
-              const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
-              const result=await runTesseract(off);
-              const dpr=window.devicePixelRatio;
-              const sr=S.zoom*dpr/ocrScale;
-              (result.words||[]).forEach(w=>{
-                if(w.text.toLowerCase().includes(termLow)){
-                  getAnnos(fileIdx,pg).push({
-                    type:(S._ocrMarkType||'highlight'),
-                    x:w.bbox.x0*sr,y:w.bbox.y0*sr,
-                    w:Math.max((w.bbox.x1-w.bbox.x0)*sr,10),
-                    h:Math.max((w.bbox.y1-w.bbox.y0)*sr,10),
-                    color:S.redactColor,strokeSize:1,
-                    opacity:(S._ocrMarkType==='redact'?1:0.5)
-                  });
-                  found++;
-                }
-              });
-            }
+            // No text layer at all = scanned page → real OCR
+            if(!pdfPage) pdfPage=await f.pdfJsDoc.getPage(pg);
+            const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
+            const result=await runTesseract(off);
+            const dpr=window.devicePixelRatio;
+            const sr=S.zoom*dpr/ocrScale;
+            const words=result.words||[];
+            const tNorm=termLow.replace(/\s+/g,'');
+            words.forEach((w,i)=>{
+              const single=w.text.toLowerCase().includes(termLow);
+              // cross-word: combine this word with the next few
+              let cross=false;
+              if(!single){
+                let comb='';
+                for(let j=i;j<words.length && j<i+5;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/\s+/g,'').includes(tNorm)){ cross=true; break; } }
+              }
+              if(single||cross){
+                getAnnos(fileIdx,pg).push({
+                  type:(S._ocrMarkType||'highlight'),
+                  x:w.bbox.x0*sr,y:w.bbox.y0*sr,
+                  w:Math.max((w.bbox.x1-w.bbox.x0)*sr,10),
+                  h:Math.max((w.bbox.y1-w.bbox.y0)*sr,10),
+                  color:S.redactColor,strokeSize:1,
+                  opacity:(S._ocrMarkType==='redact'?1:0.5)
+                });
+                found++;
+              }
+            });
           }
         }));
       }
