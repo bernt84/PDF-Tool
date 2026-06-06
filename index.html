@@ -2161,6 +2161,7 @@ async function runBulkOCRSearch(){
             const tc=await pdfPage.getTextContent();
             textItems = tc.items.map(it=>({ str:it.str, transform:it.transform, width:it.width, height:it.height }));
           }
+          console.log('[OCRsearch] page',pg,'| textItems:',textItems.length,'| term:',termLow,'| sample:',textItems.slice(0,8).map(t=>t.str).join('|'));
           // Direct per-item match (fast path)
           let matches=textItems.filter(item=>item.str && item.str.toLowerCase().includes(termLow));
           // Cross-item match: the term may be split across adjacent items (common in
@@ -2201,32 +2202,45 @@ async function runBulkOCRSearch(){
               });
               found++;
             });
-          } else if(textItems.length===0){
-            // No text layer at all = scanned page → real OCR
+          } else if(textItems.length < 8){
+            // Little or no real text layer = scanned page → real OCR (high-res, white bg)
             if(!pdfPage) pdfPage=await f.pdfJsDoc.getPage(pg);
-            const off=await renderPageForOCR(f.pdfJsDoc,pg,ocrScale,f);
+            const OCR_SCALE=2.5;
+            const pageRot=(f.pageRotations&&f.pageRotations[pg])||0;
+            const ovp=pdfPage.getViewport({scale:OCR_SCALE, rotation:pageRot});
+            const off=Object.assign(document.createElement('canvas'),{width:ovp.width,height:ovp.height});
+            const octx=off.getContext('2d'); octx.fillStyle='#ffffff'; octx.fillRect(0,0,off.width,off.height);
+            await pdfPage.render({canvasContext:octx,viewport:ovp}).promise;
             const result=await runTesseract(off);
             const dpr=window.devicePixelRatio;
-            const sr=S.zoom*dpr/ocrScale;
+            // OCR bbox is in OCR-canvas px (scale OCR_SCALE). Annotations are stored
+            // in display px (scale S.zoom*dpr). Convert: multiply by ratio.
+            const sr=(S.zoom*dpr)/OCR_SCALE;
             const words=result.words||[];
-            const tNorm=termLow.replace(/\s+/g,'');
+            console.log('[OCRsearch] page',pg,'SCANNED → OCR found',words.length,'words | sample:',words.slice(0,15).map(w=>w.text).join('|'));
+            const tNorm=termLow.replace(/[\s\-]/g,'');   // ignore spaces AND hyphens
             words.forEach((w,i)=>{
-              const single=w.text.toLowerCase().includes(termLow);
-              // cross-word: combine this word with the next few
-              let cross=false;
+              const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
+              const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
+              // cross-word: combine this word with the next few (handles "428834" "-01")
+              let cross=false, span=0;
               if(!single){
                 let comb='';
-                for(let j=i;j<words.length && j<i+5;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/\s+/g,'').includes(tNorm)){ cross=true; break; } }
+                for(let j=i;j<words.length && j<i+6;j++){ comb+=words[j].text.toLowerCase(); if(comb.replace(/[\s\-]/g,'').includes(tNorm)){ cross=true; span=j-i; break; } }
               }
               if(single||cross){
-                getAnnos(fileIdx,pg).push({
-                  type:(S._ocrMarkType||'highlight'),
-                  x:w.bbox.x0*sr,y:w.bbox.y0*sr,
-                  w:Math.max((w.bbox.x1-w.bbox.x0)*sr,10),
-                  h:Math.max((w.bbox.y1-w.bbox.y0)*sr,10),
-                  color:S.redactColor,strokeSize:1,
-                  opacity:(S._ocrMarkType==='redact'?1:0.5)
-                });
+                // mark this word (and spanned words if cross-match)
+                for(let k=i;k<=i+(cross?span:0) && k<words.length;k++){
+                  const ww=words[k];
+                  getAnnos(fileIdx,pg).push({
+                    type:(S._ocrMarkType||'highlight'),
+                    x:ww.bbox.x0*sr,y:ww.bbox.y0*sr,
+                    w:Math.max((ww.bbox.x1-ww.bbox.x0)*sr,10),
+                    h:Math.max((ww.bbox.y1-ww.bbox.y0)*sr,10),
+                    color:S.redactColor,strokeSize:1,
+                    opacity:(S._ocrMarkType==='redact'?1:0.5)
+                  });
+                }
                 found++;
               }
             });
