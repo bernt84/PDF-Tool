@@ -1260,7 +1260,26 @@ document.querySelectorAll('.mbk').forEach(bk=>bk.addEventListener('click',e=>{if
 document.getElementById('sig-w').addEventListener('input',e=>document.getElementById('sig-w-val').textContent=e.target.value+'px');
 document.addEventListener('click',e=>{if(!e.target.closest('.mb-group')&&!e.target.closest('.mb-menu'))closeMenus();});
 document.addEventListener('keydown',e=>{
-  if(e.key==='v'&&!e.ctrlKey&&!e.metaKey&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='TEXTAREA'&&!document.activeElement.isContentEditable){setTool('select');}
+  const ae=document.activeElement;
+  const typing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable);
+  const fabEditing = (typeof LA!=='undefined' && LA.canvas && LA.canvas.getActiveObject() && LA.canvas.getActiveObject().isEditing);
+  const mod = e.ctrlKey||e.metaKey;
+  // Undo / Redo (Fabric annotations)
+  if(mod && !e.shiftKey && (e.key==='z'||e.key==='Z') && !typing && !fabEditing){ e.preventDefault(); if(typeof laUndo==='function') laUndo(); return; }
+  if(mod && ((e.shiftKey && (e.key==='z'||e.key==='Z')) || e.key==='y'||e.key==='Y') && !typing && !fabEditing){ e.preventDefault(); if(typeof laRedo==='function') laRedo(); return; }
+  // Save / download
+  if(mod && (e.key==='s'||e.key==='S')){ e.preventDefault(); if(typeof smartDownload==='function') smartDownload(); return; }
+  // Copy / Paste (Fabric annotations)
+  if(mod && (e.key==='c'||e.key==='C') && !typing && !fabEditing){ if(typeof laCopy==='function' && laCopy()){ e.preventDefault(); } return; }
+  if(mod && (e.key==='v'||e.key==='V') && !typing && !fabEditing){ if(typeof laPaste==='function'){ e.preventDefault(); laPaste(); } return; }
+  // Zoom in / out (Ctrl +/-, or plain +/- when not typing)
+  if(mod && (e.key==='='||e.key==='+')){ e.preventDefault(); if(typeof changeZoom==='function') changeZoom(0.1); return; }
+  if(mod && (e.key==='-'||e.key==='_')){ e.preventDefault(); if(typeof changeZoom==='function') changeZoom(-0.1); return; }
+  if(mod && (e.key==='0')){ e.preventDefault(); if(typeof zoomFit==='function') zoomFit(); return; }
+  if(!mod && !typing && !fabEditing && (e.key==='+'||e.key==='=')){ if(typeof changeZoom==='function') changeZoom(0.1); return; }
+  if(!mod && !typing && !fabEditing && (e.key==='-'||e.key==='_')){ if(typeof changeZoom==='function') changeZoom(-0.1); return; }
+
+  if(e.key==='v'&&!e.ctrlKey&&!e.metaKey&&!typing){setTool('select');}
   if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();toggleSearch();}
   if(e.key==='Escape'){closeSearch();cancelBmEdit();}
   if((e.key==='Delete'||e.key==='Backspace')&&S._selEl&&document.activeElement!==S._selEl&&!document.activeElement.isContentEditable){
@@ -5046,17 +5065,17 @@ function laWireCanvasEvents(){
   c.on('selection:created', laOnSelect);
   c.on('selection:updated', laOnSelect);
   c.on('selection:cleared', ()=>laHideBar());
-  c.on('object:modified', ()=>{ laPersist(); laPositionBar(); });
+  c.on('object:modified', ()=>{ laPersist(); laSnapshotNow(); laPositionBar(); });
   c.on('object:moving', laPositionBar);
   c.on('object:scaling', laPositionBar);
   c.on('object:rotating', laPositionBar);
-  c.on('text:changed', ()=>laPersist());
+  c.on('text:changed', ()=>{ laPersist(); laSnapshotNow(); });
   c.on('path:created', (e)=>{
     const path=e.path; if(!path) return;
     path.laType='pen'; path.laColor=(c.freeDrawingBrush&&c.freeDrawingBrush.color)||S.color||'#dc2626';
     path.laStroke=(c.freeDrawingBrush&&c.freeDrawingBrush.width)||S.strokeSize||3;
     path.objectCaching=false; path.fill=null;
-    laPersist();
+    laPersist(); laSnapshotNow();
     if(LA.DEBUG) console.log('[LA draw] pen path created');
   });
 }
@@ -5128,6 +5147,66 @@ function laPersist(){
   arr._zoom = S.zoom;   // remember the display scale these pixel coords belong to
   LA.objectsByPage[S.activeIdx][S.page]=arr;
 }
+
+// ---- Undo / Redo history (per active page) ---------------------------------
+LA._hist = {};        // hist[fileIdx][page] = { stack:[snapshots], idx }
+LA._histSuspend = false;
+function laHistKey(){ return (S.activeIdx)+':'+(S.page); }
+function laHistFor(){
+  const k=laHistKey();
+  if(!LA._hist[k]) LA._hist[k]={stack:[], idx:-1};
+  return LA._hist[k];
+}
+function laSnapshotNow(){
+  if(LA._histSuspend || !LA.canvas) return;
+  const h=laHistFor();
+  const snap=JSON.stringify(LA.canvas.getObjects().map(o=>o.toObject(LA_PROPS)));
+  // Drop any redo entries past current index, then push
+  if(h.idx < h.stack.length-1) h.stack=h.stack.slice(0, h.idx+1);
+  // Avoid duplicate consecutive snapshots
+  if(h.stack.length && h.stack[h.stack.length-1]===snap) return;
+  h.stack.push(snap);
+  if(h.stack.length>50) h.stack.shift();   // cap memory
+  h.idx=h.stack.length-1;
+}
+function laHistInitPage(){
+  // Seed the history with the current state if empty (so first undo has a baseline)
+  const h=laHistFor();
+  if(h.stack.length===0) laSnapshotNow();
+}
+async function laRestoreSnapshot(snapStr){
+  const c=LA.canvas; if(!c) return;
+  LA._histSuspend=true;
+  try{
+    const list=JSON.parse(snapStr);
+    c.clear();
+    if(list.length){
+      const objs=await fabric.util.enlivenObjects(list);
+      objs.forEach(o=>{ laAttach(o); c.add(o); });
+    }
+    // persist restored state to the page store (at current zoom)
+    const arr=list; arr._zoom=S.zoom;
+    LA.objectsByPage[S.activeIdx][S.page]=arr.map(o=>Object.assign({},o));
+    laApplyToolMode(); c.requestRenderAll(); laHideBar();
+  }catch(e){ if(LA.DEBUG)console.error('[LA undo] restore',e); }
+  LA._histSuspend=false;
+}
+async function laUndo(){
+  const h=laHistFor();
+  if(h.idx<=0){ if(LA.DEBUG)console.log('[LA undo] nothing to undo'); return; }
+  h.idx--;
+  await laRestoreSnapshot(h.stack[h.idx]);
+  if(LA.DEBUG)console.log('[LA undo] -> idx',h.idx,'/',h.stack.length-1);
+}
+async function laRedo(){
+  const h=laHistFor();
+  if(h.idx>=h.stack.length-1){ if(LA.DEBUG)console.log('[LA redo] nothing to redo'); return; }
+  h.idx++;
+  await laRestoreSnapshot(h.stack[h.idx]);
+  if(LA.DEBUG)console.log('[LA redo] -> idx',h.idx,'/',h.stack.length-1);
+}
+window.laUndo=laUndo; window.laRedo=laRedo; window.laSnapshotNow=laSnapshotNow; window.laHistInitPage=laHistInitPage;
+
 // Scale a serialized object list from the zoom it was stored at to the current zoom.
 function laRescaleList(list, fromZoom, toZoom){
   if(!fromZoom || !toZoom || Math.abs(fromZoom-toZoom)<1e-6) return;
@@ -5172,6 +5251,7 @@ async function laRenderPage(){
   c.requestRenderAll();
   laHideBar();
   LA._loading=false;
+  laHistInitPage();   // ensure an undo baseline exists for this page
 }
 
 // Extract absolute canvas points from a serialized Fabric pen Path. Fabric stores
@@ -5401,7 +5481,7 @@ function laMouseUp(){
   if(d.line){ tooSmall=Math.hypot(d.obj.x2-d.obj.x1,d.obj.y2-d.obj.y1)<5; }
   else { tooSmall=(d.obj.width||d.obj.rx*2)<4 && (d.obj.height||d.obj.ry*2)<4; }
   if(tooSmall){ c.remove(d.obj); }
-  else { c.setActiveObject(d.obj); laPersist();
+  else { c.setActiveObject(d.obj); laPersist(); laSnapshotNow();
     if(LA.DEBUG){ const o=d.obj;
       if(d.line) console.log('[LA draw] '+o.laType+' canvas pts: ('+Math.round(o.x1)+','+Math.round(o.y1)+') -> ('+Math.round(o.x2)+','+Math.round(o.y2)+')');
       else console.log('[LA draw] '+o.laType+' canvas left/top/w/h:',Math.round(o.left),Math.round(o.top),Math.round(o.width||o.rx*2),Math.round(o.height||o.ry*2),'angle:',o.angle||0);
@@ -5499,12 +5579,41 @@ function laPositionBar(){
 async function laDuplicate(o){
   const c=LA.canvas; const clone=await o.clone(LA_PROPS);
   clone.set({left:o.left+14, top:o.top+14}); laAttach(clone); c.add(clone); c.setActiveObject(clone);
-  laPersist(); c.requestRenderAll();
+  laPersist(); laSnapshotNow(); c.requestRenderAll();
 }
 function laDeleteActive(){
-  const c=LA.canvas; const objs=c.getActiveObjects(); objs.forEach(o=>c.remove(o)); c.discardActiveObject(); laHideBar(); laPersist(); c.requestRenderAll();
+  const c=LA.canvas; const objs=c.getActiveObjects(); objs.forEach(o=>c.remove(o)); c.discardActiveObject(); laHideBar(); laPersist(); laSnapshotNow(); c.requestRenderAll();
 }
 function laDeselect(){ if(LA.canvas){ LA.canvas.discardActiveObject(); LA.canvas.requestRenderAll(); } laHideBar(); }
+
+// ---- Copy / Paste ----------------------------------------------------------
+LA._clipboard = null;   // array of serialized objects
+function laCopy(){
+  const c=LA.canvas; if(!c) return false;
+  const objs=c.getActiveObjects(); if(!objs.length) return false;
+  LA._clipboard = objs.map(o=>o.toObject(LA_PROPS));
+  if(LA.DEBUG) console.log('[LA copy]',LA._clipboard.length,'object(s)');
+  return true;
+}
+async function laPaste(){
+  const c=LA.canvas; if(!c || !LA._clipboard || !LA._clipboard.length) return false;
+  try{
+    // Clone the serialized clipboard so repeated pastes don't share references
+    const list = JSON.parse(JSON.stringify(LA._clipboard));
+    const objs = await fabric.util.enlivenObjects(list);
+    c.discardActiveObject();
+    const added=[];
+    objs.forEach(o=>{ o.set({ left:(o.left||0)+18, top:(o.top||0)+18 }); laAttach(o); c.add(o); added.push(o); });
+    if(added.length===1){ c.setActiveObject(added[0]); }
+    else if(added.length>1){ const sel=new fabric.ActiveSelection(added,{canvas:c}); c.setActiveObject(sel); }
+    laPersist(); laSnapshotNow(); c.requestRenderAll();
+    // Offset clipboard so a subsequent paste lands a bit further down
+    LA._clipboard.forEach(s=>{ s.left=(s.left||0)+18; s.top=(s.top||0)+18; });
+    if(LA.DEBUG) console.log('[LA paste]',added.length,'object(s)');
+    return true;
+  }catch(e){ if(LA.DEBUG)console.error('[LA paste]',e); return false; }
+}
+window.laCopy=laCopy; window.laPaste=laPaste;
 
 // Esc + delete
 window.addEventListener('keydown',(e)=>{
