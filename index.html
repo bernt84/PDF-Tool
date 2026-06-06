@@ -1388,7 +1388,6 @@ function triggerFile(){
 }
 
 async function handleFiles(newFiles){
-  console.log('handleFiles called with', newFiles.length, 'files');
   if(!newFiles||!newFiles.length){toast('Ingen PDF-filer',true);return;}
   for(const f of newFiles){
     const ab=await f.arrayBuffer();
@@ -2237,17 +2236,14 @@ async function autoRotatePage(){
 }
 
 async function autoRotateAllPages(){
-  console.log('[autoRotate] clicked. activeIdx=',S.activeIdx);
   if(S.activeIdx<0){toast('Åbn et dokument først',true);return;}
   const f=S.files[S.activeIdx];
   if(!f.pdfJsDoc){toast('Dokument ikke klar',true);return;}
   const total=f.pdfJsDoc.numPages;
-  console.log('[autoRotate] pages=',total,'| Tesseract loaded?',typeof Tesseract!=='undefined');
   showProgress('Auto-Roter dokument',0,total);
   // Prepare OSD (orientation) engine — this is what reliably reports rotation.
   let useOsd=true;
   try{ await getOsdWorker(); }catch(e){ console.warn('[autoRotate] OSD unavailable, using heuristic',e); useOsd=false; try{ await getTessWorker(); }catch(e2){ hideProgress(); toast('OCR fejl: '+e2.message,true); return; } }
-  console.log('[autoRotate] orientation engine ready (OSD:'+useOsd+'), starting page loop');
   if(!f.pageRotations)f.pageRotations={};
   let changed=0;
   for(let pg=1;pg<=total;pg++){
@@ -2267,7 +2263,6 @@ async function autoRotateAllPages(){
         const result=await runTesseract(off);
         rotation=detectRotationFromWords(result.words,off.width,off.height);
       }
-      console.log('[autoRotate] page',pg,'curRot',curRot,'-> additional rotate',rotation,'deg');
       if(rotation){
         const before=curRot;
         if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,pg,rotation,before); }catch(e){ console.error('remap',e); } }
@@ -3865,7 +3860,6 @@ const MuPDF = {
 
   _handleMessage(e) {
     const {id, type, result, msg} = e.data;
-    if (type === 'debug') { console.log('Worker debug:', msg); return; }
     if (!id) return;
     const cb = this.pendingCalls.get(id);
     if (!cb) return;
@@ -3960,18 +3954,14 @@ const MuEditor = {
     this._clearOverlay();
 
     document.getElementById('te-edit-info').textContent = 'MuPDF analyserer side…';
-    console.log('MuEditor.loadPage: loading doc, buf size:', f.buf?.byteLength);
 
     try {
       // Load doc into MuPDF worker if not already
       const copy = f.buf.slice(0); // always use fresh copy
       const result = await MuPDF.loadDoc(copy);
-      console.log('MuPDF.loadDoc result:', result);
 
       // Get text blocks for this page
       const {blocks, pageBounds} = await MuPDF.getPageBlocks(S.page, S.zoom);
-      console.log('getPageBlocks:', blocks?.length, 'blocks, pageBounds:', pageBounds);
-      if (blocks?.length) console.log('first block:', JSON.stringify(blocks[0]));
       this.blocks = blocks;
       this.pageBounds = pageBounds;
       this._renderBlocks();
@@ -4546,7 +4536,6 @@ function checkMuPDFStatus() {
   const sab = typeof SharedArrayBuffer !== 'undefined';
   const cross = self.crossOriginIsolated;
   toast('SharedArrayBuffer: ' + (sab?'✓':'✗') + ' | crossOriginIsolated: ' + (cross?'✓':'✗') + ' | MuPDF: ' + (MuPDF.ready?'klar':MuPDF.loading?'loader':'ikke startet'));
-  console.log('SAB:', sab, 'COI:', cross, 'MuPDF ready:', MuPDF.ready);
 }
 
 
@@ -4700,7 +4689,6 @@ const TE = {
 
 
 async function teLoadPage() {
-  console.log('teLoadPage called, S.activeIdx=', S.activeIdx, 'S.page=', S.page);
   if (S.activeIdx < 0) return;
   const f = S.files[S.activeIdx];
   teClearOverlay();
@@ -4717,14 +4705,12 @@ async function teLoadPage() {
   if(!content.items.length) {
     content = await page.getTextContent({includeMarkedContent: false});
   }
-  console.log('getTextContent result:', content.items.length, 'items, first:', content.items[0]?.str?.substring(0,30));
 
   // Use original txt-overlay
   const overlay = document.getElementById('txt-overlay');
   if(!overlay){ toast('Fejl: overlay ikke fundet', true); return; }
   overlay.innerHTML = '';
   overlay.style.pointerEvents = 'all';
-  console.log('overlay ready:', overlay, 'content items:', content.items.length);
 
   let items = content.items.filter(i => i.str && i.str.trim().length > 0);
 
@@ -5249,7 +5235,7 @@ const LA = {
   FONTS: ['Helvetica','Times','Courier'],
   FONT_CSS: { Helvetica:'Helvetica, Arial, sans-serif', Times:'"Times New Roman", Times, serif', Courier:'"Courier New", Courier, monospace' },
   TOOLS: ['rect','circle','text','arrow','line','highlight','redact','pen'],
-  DEBUG: true,
+  DEBUG: false,
 };
 function laIsTool(t){ return LA.TOOLS.indexOf(t)>=0; }
 
@@ -5561,7 +5547,6 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
         : 'L/T/W/H '+Math.round(s.left)+','+Math.round(s.top)+','+Math.round((s.width||s.rx*2||0))+','+Math.round((s.height||s.ry*2||0));
       const ow=oldVp.width, oh=oldVp.height, nw2=newVp.width, nh2=newVp.height;
       const fracNew = 'new%('+((s.left/nw2*100).toFixed(0)+','+(s.top/nh2*100).toFixed(0))+')';
-      console.log('[LA remapList]   '+s.laType+': '+_b+'  =>  '+_a+'   '+fracNew);
     }
   });
 }
