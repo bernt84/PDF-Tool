@@ -1457,9 +1457,10 @@ async function renderPage(){
   if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
   if(S.renderTask){S.renderTask.cancel();S.renderTask=null;}
   const page=await f.pdfJsDoc.getPage(S.page);
+  const intrinsic=((page.rotate||0)%360+360)%360;   // source PDF's own /Rotate
   const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
   const sc=S.zoom*window.devicePixelRatio;
-  const vp=page.getViewport({scale:sc,rotation:(S.rotation+pageRot)%360});
+  const vp=page.getViewport({scale:sc,rotation:(S.rotation+intrinsic+pageRot)%360});
   const cv=document.getElementById('pdf-canvas');const av=document.getElementById('anno-canvas');
   const W=vp.width,H=vp.height;
   [cv,av].forEach(c=>{c.width=W;c.height=H;c.style.width=(W/window.devicePixelRatio)+'px';c.style.height=(H/window.devicePixelRatio)+'px';});
@@ -2359,8 +2360,9 @@ function zoomFit(){
   if(S.activeIdx<0)return;
   const f=S.files[S.activeIdx];
   f.pdfJsDoc.getPage(S.page).then(pg=>{
+    const intrinsic=((pg.rotate||0)%360+360)%360;
     const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
-    const vp=pg.getViewport({scale:1, rotation:(S.rotation+pageRot)%360}); // rotated dims
+    const vp=pg.getViewport({scale:1, rotation:(S.rotation+intrinsic+pageRot)%360}); // rotated dims
     const cont=document.getElementById('cv-container');
     const availW=Math.max(50, cont.clientWidth-28);
     const availH=Math.max(50, cont.clientHeight-28);
@@ -5367,8 +5369,9 @@ async function laRefreshViewport(){
     if(LA.DEBUG) console.log('[LA vp] via clone — rotation:',LA._vp.rotation,'scale:',LA._vp.scale,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height),'| S.rotation:',S.rotation,'zoom:',S.zoom);
     return; }catch(e){ if(LA.DEBUG)console.warn('[LA vp] clone failed',e); } }
   const page=await f.pdfJsDoc.getPage(S.page);
+  const intrinsic=((page.rotate||0)%360+360)%360;
   const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
-  LA._vp=page.getViewport({scale:S.zoom, rotation:(S.rotation+pageRot)%360});
+  LA._vp=page.getViewport({scale:S.zoom, rotation:(S.rotation+intrinsic+pageRot)%360});
   if(LA.DEBUG) console.log('[LA vp] via getViewport — rotation:',(S.rotation+pageRot)%360,'scale:',S.zoom,'pageRot:',pageRot,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height));
 }
 function laScreenToPdf(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToPdfPoint(x,y); return [p[0],p[1]]; }
