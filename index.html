@@ -5187,7 +5187,10 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
       const _a = s.laType==='line'||s.laType==='arrow'
         ? 'pts('+Math.round(s.x1)+','+Math.round(s.y1)+')->('+Math.round(s.x2)+','+Math.round(s.y2)+')'
         : 'L/T/W/H '+Math.round(s.left)+','+Math.round(s.top)+','+Math.round((s.width||s.rx*2||0))+','+Math.round((s.height||s.ry*2||0));
-      console.log('[LA remapList]   '+s.laType+': '+_b+'  =>  '+_a);
+      const ow=oldVp.width, oh=oldVp.height, nw2=newVp.width, nh2=newVp.height;
+      const fracOld = 'old%('+(s.laType==='line'||s.laType==='arrow'?'':((s.left/ow*100).toFixed(0)+','+(s.top/oh*100).toFixed(0)))+')';
+      const fracNew = 'new%('+((s.left/nw2*100).toFixed(0)+','+(s.top/nh2*100).toFixed(0))+')';
+      console.log('[LA remapList]   '+s.laType+': '+_b+'  =>  '+_a+'   '+fracNew);
     }
   });
 }
@@ -5220,9 +5223,10 @@ async function laRemapPageForRotation(fileIdx, pageNum, deltaDeg, currentRot){
   if(fileIdx===S.activeIdx && pageNum===S.page) laPersist();
   const byPage = LA.objectsByPage[fileIdx];
   const list = byPage && byPage[pageNum];
-  if(!list || !list.length) return;   // nothing to remap on this page
-  const f=S.files[fileIdx]; if(!f||!f.pdfJsDoc) return;
-  let page; try{ page=await f.pdfJsDoc.getPage(pageNum); }catch(e){ return; }
+  if(LA.DEBUG) console.log('[LA remap] ENTER file',fileIdx,'page',pageNum,'delta',deltaDeg,'curRot',currentRot,'| list len:',list?list.length:'(none)');
+  if(!list || !list.length){ if(LA.DEBUG) console.log('[LA remap] EXIT — no objects on this page'); return; }
+  const f=S.files[fileIdx]; if(!f||!f.pdfJsDoc){ if(LA.DEBUG)console.log('[LA remap] EXIT — no pdfJsDoc'); return; }
+  let page; try{ page=await f.pdfJsDoc.getPage(pageNum); }catch(e){ if(LA.DEBUG)console.log('[LA remap] EXIT — getPage failed'); return; }
   const r0=((currentRot||0)%360+360)%360;
   const r1=((r0+deltaDeg)%360+360)%360;
   const sc=S.zoom||1;   // objects are stored in display-scale canvas coords
