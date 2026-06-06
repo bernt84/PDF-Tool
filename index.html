@@ -2227,7 +2227,7 @@ async function runBulkOCRSearch(){
             const result=await runTesseract(off);
             const words=result.words||[];
             const sr=(S.zoom*dpr)/OCR_SCALE;
-            if(window.LA&&LA.DEBUG) console.log('[OCRsearch] page',pg,'corr',correction,'→',words.length,'words | sample:',words.slice(0,12).map(w=>w.text).join('|'));
+            console.log('[OCRsearch] page',pg,'corr',correction,'| canvas',off.width+'x'+off.height,'| OCR words:',words.length,'| søger efter:',tNorm,'| sample:',words.slice(0,20).map(w=>w.text).join(' '));
             words.forEach((w,i)=>{
               const wNorm=w.text.toLowerCase().replace(/[\s\-]/g,'');
               const single=wNorm.includes(tNorm) || w.text.toLowerCase().includes(termLow);
