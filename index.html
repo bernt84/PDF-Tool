@@ -5174,6 +5174,43 @@ async function laRenderPage(){
   LA._loading=false;
 }
 
+// Extract absolute canvas points from a serialized Fabric pen Path. Fabric stores
+// path commands in absolute path-space; pathOffset is the path centre. The object
+// transform is: abs = center + R(angle)·S(scale)·(cmd - pathOffset), with
+// center = (left + width*scaleX/2, top + height*scaleY/2).
+function laPenAbsPoints(s){
+  const pathArr=s.path||[]; const sx=s.scaleX||1, sy=s.scaleY||1;
+  const ang=(s.angle||0)*Math.PI/180;
+  const ox=(s.pathOffset&&s.pathOffset.x)||0, oy=(s.pathOffset&&s.pathOffset.y)||0;
+  const cx=(s.left||0)+(s.width||0)*sx/2, cy=(s.top||0)+(s.height||0)*sy/2;
+  const ca=Math.cos(ang), sa=Math.sin(ang);
+  const pts=[];
+  pathArr.forEach(cmd=>{
+    for(let i=1;i<cmd.length;i+=2){
+      const lx=(cmd[i]-ox)*sx, ly=(cmd[i+1]-oy)*sy;
+      const rx=lx*ca-ly*sa, ry=lx*sa+ly*ca;
+      pts.push([cx+rx, cy+ry]);
+    }
+  });
+  return pts;
+}
+// Rebuild a serialized pen Path from new absolute canvas points (remapped).
+// We keep Fabric's convention: store absolute coords in path, pathOffset = centre.
+function laRemapPenPath(s, remap){
+  const abs=laPenAbsPoints(s);
+  if(!abs.length) return;
+  const np=abs.map(([x,y])=>remap(x,y));
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  np.forEach(([x,y])=>{ if(x<minx)minx=x; if(y<miny)miny=y; if(x>maxx)maxx=x; if(y>maxy)maxy=y; });
+  const w=Math.max(1,maxx-minx), h=Math.max(1,maxy-miny);
+  const cx=(minx+maxx)/2, cy=(miny+maxy)/2;
+  // path coords absolute; pathOffset = centre; left/top = bbox min; neutral transform
+  s.path=np.map(([x,y],i)=>[ i===0?'M':'L', x, y ]);
+  s.left=minx; s.top=miny; s.width=w; s.height=h;
+  s.pathOffset={x:cx, y:cy};
+  s.angle=0; s.scaleX=1; s.scaleY=1;
+}
+
 // Core: transform a serialized object list from oldVp canvas-space to newVp canvas-space.
 function laRemapList(list, oldVp, newVp, deltaDeg){
   const c2p = (x,y)=>{ const p=oldVp.convertToPdfPoint(x,y); return [p[0],p[1]]; };
@@ -5198,15 +5235,10 @@ function laRemapList(list, oldVp, newVp, deltaDeg){
       s.rx=nrx; s.ry=nry; s.scaleX=1; s.scaleY=1;
       s.left=ncx-nrx; s.top=ncy-nry;
     } else if(s.laType==='pen'){
-      // Fabric Path: transform its bounding-box origin through the viewport, swap
-      // W/H on 90/270, and add the rotation delta to the object's angle so the
-      // stroke shape rotates with the page.
-      const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
-      const [ax,ay]=remap(s.left,s.top);
-      const [bx,by]=remap(s.left+w,s.top+h);
-      s.left=Math.min(ax,bx); s.top=Math.min(ay,by);
-      s.angle=(((s.angle||0)+deltaDeg)%360+360)%360;
-      s.scaleX=s.scaleX||1; s.scaleY=s.scaleY||1;
+      // A pen stroke is a polyline. Convert every path point to absolute canvas
+      // coords, remap each through the viewport, then rebuild the path as a fresh
+      // polyline with neutral transform — so it follows the page exactly.
+      laRemapPenPath(s, remap);
     } else {
       // rect, highlight, redact, text — transform two opposite corners, rebuild AABB
       const w=(s.width||0)*(s.scaleX||1), h=(s.height||0)*(s.scaleY||1);
@@ -5546,25 +5578,10 @@ function laSerializedToAnno(s, fileIdx, pg){
       opacity:(s.laType==='highlight')?(s.laOpacity||s.opacity||0.32):1 });
   }
   if(s.laType==='pen'){
-    // Sample the Fabric path's points (in object-local coords), apply the object's
-    // transform (scale + angle + translate) to canvas space, then to PDF.
-    const pathArr = s.path||[]; const sx=s.scaleX||1, sy=s.scaleY||1;
-    const ang=(s.angle||0)*Math.PI/180;
-    // Fabric path coords are relative to the path's own bounding box; pathOffset
-    // holds the local origin. Reconstruct absolute canvas points.
-    const ox=(s.pathOffset&&s.pathOffset.x)||0, oy=(s.pathOffset&&s.pathOffset.y)||0;
-    const pts=[];
-    pathArr.forEach(cmd=>{
-      // cmd like ['M',x,y] or ['Q',cx,cy,x,y] or ['L',x,y]
-      for(let i=1;i<cmd.length;i+=2){
-        const lx=cmd[i]-ox, ly=cmd[i+1]-oy;
-        const scx=lx*sx, scy=ly*sy;
-        const rx=scx*Math.cos(ang)-scy*Math.sin(ang), ry=scx*Math.sin(ang)+scy*Math.cos(ang);
-        const cx=s.left+rx, cy=s.top+ry;
-        const p=laScreenToPdf(cx,cy); pts.push([p[0],p[1]]);
-      }
-    });
-    if(pts.length<2) return null;
+    // Reconstruct absolute canvas points (handles scale/angle/offset), then to PDF.
+    const abs=laPenAbsPoints(s);
+    if(abs.length<2) return null;
+    const pts=abs.map(([x,y])=>{ const p=laScreenToPdf(x,y); return [p[0],p[1]]; });
     if(LA.DEBUG) console.log('[LA bake]   pen path with',pts.length,'points');
     return Object.assign(base,{ type:'polyline', _pts:pts, color:col, strokeSize:s.laStroke||s.strokeWidth||3 });
   }
