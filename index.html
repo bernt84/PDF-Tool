@@ -453,6 +453,28 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 .la-popup .la-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:12px;color:#334155;}
 .la-popup .la-row:hover{background:#f1f5f9;}
 .la-popup .la-row.on{background:#eef2ff;}
+
+/* ── Sideorganisering (Page Organizer) drawer ── */
+#pm-drawer{position:fixed;top:0;right:0;width:300px;height:100vh;background:var(--sf);border-left:1px solid var(--bd);z-index:400;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.5);transition:transform .2s}
+#pm-drawer.hidden{transform:translateX(310px)}
+#pm-head{flex-shrink:0;padding:11px 13px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+#pm-head b{font-size:13px}
+#pm-info{font-size:10px;color:var(--t3);margin-top:2px}
+#pm-tb{flex-shrink:0;display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--bd)}
+#pm-list{flex:1;overflow-y:auto;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.pm-card{position:relative;background:var(--sf3);border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .12s}
+.pm-card:hover{border-color:var(--bd2)}
+.pm-card.pm-cur{border-color:var(--acc)}
+.pm-card.pm-selected{border-color:var(--pur)}
+.pm-cv{display:block;width:100%;background:#fff}
+.pm-lbl{font-size:10px;color:var(--t2);text-align:center;padding:2px 0;background:var(--sf2);display:flex;align-items:center;justify-content:center;gap:3px}
+.pm-ext{color:var(--cyn)}
+.pm-cb{position:absolute;top:4px;left:4px;width:17px;height:17px;border-radius:4px;border:1.5px solid #fff;background:rgba(0,0,0,.45);z-index:3;display:flex;align-items:center;justify-content:center}
+.pm-cb.on{background:var(--pur);border-color:var(--pur)}
+.pm-cb.on::after{content:'✓';font-size:11px;color:#fff;font-weight:700}
+.sortable-ghost{opacity:.4}
+#pm-merge-box{display:none;flex-direction:column;gap:7px;padding:10px;border-top:1px solid var(--bd);background:var(--sf2)}
+#pm-merge-box select{background:var(--sf3);border:1px solid var(--bd);color:var(--t1);border-radius:5px;font-size:11px;padding:5px 7px;outline:none;width:100%}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.11.0/dist/tabler-icons.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/fabric@6.4.3/dist/index.js"></script>
@@ -649,6 +671,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
         <div class="mb-item" onclick="openM('m-split');closeMenus()">✂ Split PDF…</div>
         <div class="mb-sep"></div>
+        <div class="mb-item" onclick="pmToggle();closeMenus()">📑 Sideorganisering (flet/flyt/slet)</div>
         <div class="mb-item" onclick="togglePageMgr();closeMenus()">⊞ Sidepanel</div>
         <div class="mb-item" onclick="toggleCompare();closeMenus()">⊟⊞ Sammenlign</div>
       </div>
@@ -1439,7 +1462,9 @@ async function openFile(idx){
   try{
     if(!f.pdfJsDoc){prog(40);f.pdfJsDoc=await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;}
     if(!f.pdfLibDoc){prog(60);f.pdfLibDoc=await PDFLib.PDFDocument.load(f.buf.slice(0),{ignoreEncryption:true});}
-    S.totalPages=f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
+    if(typeof pmEnsureOrder==='function') pmEnsureOrder(idx);
+    S.totalPages=(typeof pmPageCount==='function')?pmPageCount(idx):f.pdfJsDoc.numPages;prog(80);showEmpty(false);updateNavUI();
+    if(PM&&PM._open) pmRender();
     await renderPage();setTimeout(()=>zoomFit(),100);renderFileList();await loadBms(f);loadMeta(f);
     if(S._pageMgrOpen)await renderPageThumbs();renderAnnoList();
     ['tb-save','tb-sug','btn-bm-add','btn-teocr','btn-copy-txt','btn-meta-ok']
@@ -1456,9 +1481,13 @@ async function openFile(idx){
 async function renderPage(){
   if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
   if(S.renderTask){S.renderTask.cancel();S.renderTask=null;}
-  const page=await f.pdfJsDoc.getPage(S.page);
+  // Resolve display page -> source {fi,src} via the page organizer (if used).
+  const ent=(typeof pmEntry==='function')?pmEntry(S.activeIdx,S.page):{fi:S.activeIdx,src:S.page};
+  const srcF=S.files[ent.fi]||f;
+  if(typeof pmDocFor==='function' && !srcF.pdfJsDoc){ try{ await pmDocFor(ent.fi); }catch(e){} }
+  const page=await srcF.pdfJsDoc.getPage(ent.src);
   const intrinsic=((page.rotate||0)%360+360)%360;   // source PDF's own /Rotate
-  const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+  const pageRot=(srcF.pageRotations&&srcF.pageRotations[ent.src])||0;
   const sc=S.zoom*window.devicePixelRatio;
   const vp=page.getViewport({scale:sc,rotation:(S.rotation+intrinsic+pageRot)%360});
   const cv=document.getElementById('pdf-canvas');const av=document.getElementById('anno-canvas');
@@ -2352,13 +2381,12 @@ async function autoRotateAll(){
 // ================================================================
 // NAV + ZOOM + ROTATE
 // ================================================================
-function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();if(S._fitMode!==false){zoomFit();}else{renderPage();}if(S._pageMgrOpen)highlightThumb(n);if(TE.active)setTimeout(()=>teLoadPage(),300);}
-function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();if(S._fitMode!==false){zoomFit();}else{renderPage();}}
+function changePage(d){const n=S.page+d;if(n<1||n>S.totalPages)return;S.page=n;updateNavUI();renderPage();if(S._pageMgrOpen)highlightThumb(n);if(TE.active)setTimeout(()=>teLoadPage(),300);}
+function gotoPageInput(v){const n=parseInt(v);if(isNaN(n)||n<1||n>S.totalPages){document.getElementById('pn-inp').value=S.page;return;}S.page=n;updateNavUI();renderPage();}
 function updateNavUI(){const pi=document.getElementById('pn-inp');pi.disabled=S.totalPages===0;pi.max=S.totalPages;document.getElementById('tb-prev').disabled=S.page<=1;document.getElementById('tb-next').disabled=S.page>=S.totalPages;}
-function changeZoom(d){S._fitMode=false;S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
+function changeZoom(d){S.zoom=Math.max(.3,Math.min(4,S.zoom+d));renderPage();}
 function zoomFit(){
   if(S.activeIdx<0)return;
-  S._fitMode=true;
   const f=S.files[S.activeIdx];
   f.pdfJsDoc.getPage(S.page).then(pg=>{
     const intrinsic=((pg.rotate||0)%360+360)%360;
@@ -2375,19 +2403,20 @@ function zoomFit(){
 async function rotateSingle(dir){
   if(S.activeIdx<0)return;
   const step = (dir===-90 || dir==='ccw') ? -90 : 90;   // default clockwise
-  const f=S.files[S.activeIdx];
+  const ent=(typeof pmEntry==='function')?pmEntry(S.activeIdx,S.page):{fi:S.activeIdx,src:S.page};
+  const f=S.files[ent.fi]||S.files[S.activeIdx];
   if(!f.pdfJsDoc) return;
   try {
     if(!f.pageRotations) f.pageRotations = {};
-    const before = ((f.pageRotations[S.page]||0)%360+360)%360;
+    const before = ((f.pageRotations[ent.src]||0)%360+360)%360;
     // Remap live annotations from the current rotation to the new one FIRST,
     // using the same page-rotation model auto-rotate uses (one source of truth).
-    if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(S.activeIdx,S.page,step,before); }catch(e){ console.error('remap',e); } }
+    if(typeof laRemapPageForRotation==='function'){ try{ await laRemapPageForRotation(ent.fi,ent.src,step,before); }catch(e){ console.error('remap',e); } }
     // Apply the rotation purely as a view rotation (no baking into the buffer).
     const newRot = ((before+step)%360+360)%360;
-    f.pageRotations[S.page] = newRot;
+    f.pageRotations[ent.src] = newRot;
     f._hasRotation = Object.values(f.pageRotations).some(r=>r);
-    if(LA.DEBUG) console.log('[rotateSingle] page',S.page,'step',step,'=>',before,'->',newRot);
+    if(LA.DEBUG) console.log('[rotateSingle] src page',ent.src,'step',step,'=>',before,'->',newRot);
     renderFileList();
     await renderPage();
     zoomFit();
@@ -2991,6 +3020,17 @@ async function smartDownload(){
 async function downloadFilePDF(fileIdx){
   const f=S.files[fileIdx];const btn=document.getElementById('tb-save');if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>';}
   try{
+    // --- Page-organizer path: reorder / delete / merge ---
+    if(typeof pmIsModified==='function' && pmIsModified(f)){
+      const doc=await pmAssembleDoc(fileIdx);   // bakes annotations + rotations + order
+      await bakeTextEdits(doc,fileIdx);await bakeTextEditsNew(doc,fileIdx);
+      const activeBms=f._existingBms.filter(b=>!b.disabled);
+      if(activeBms.length>0)applyOutline(doc,activeBms);
+      triggerDL(await doc.save(),(S.activeIdx===fileIdx&&S.customFn?S.customFn:san(f.name.replace(/\.pdf$/i,'')))+'.pdf');
+      toast('Download ✓','ok');
+      if(btn){btn.disabled=false;btn.innerHTML='⬇ Download';}
+      return;
+    }
     // Bake any not-yet-baked annotations (on every page) into f.buf first,
     // so they survive download even if the user never left the page.
     if(S.annos[fileIdx]){for(const pg of Object.keys(S.annos[fileIdx])){await bakePageNow(fileIdx,parseInt(pg));}}
@@ -3000,7 +3040,7 @@ async function downloadFilePDF(fileIdx){
     if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
     if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
     if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
-    if(typeof laFlushToAnnos==='function')laFlushToAnnos(fileIdx);
+    if(typeof laFlushToAnnos==='function')await laFlushToAnnos(fileIdx);
     await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);await bakeTextEditsNew(doc,fileIdx);
     const activeBms=f._existingBms.filter(b=>!b.disabled);
     if(activeBms.length>0)applyOutline(doc,activeBms);
@@ -3025,7 +3065,7 @@ async function bulkZip(files){
       if(f.pendingRotation){doc.getPages().forEach(p=>{const c=p.getRotation().angle;p.setRotation(PDFLib.degrees((c+f.pendingRotation)%360));});f.pendingRotation=0;}
       if(f.pageRotations)Object.keys(f.pageRotations).forEach(pg=>{const idx=parseInt(pg)-1;if(idx>=0&&idx<doc.getPageCount()){const p=doc.getPage(idx);p.setRotation(PDFLib.degrees((p.getRotation().angle+(f.pageRotations[pg]||0))%360));}});
       if(f.deletedPages&&f.deletedPages.size>0){[...f.deletedPages].map(p=>p-1).sort((a,b)=>b-a).forEach(idx=>{try{doc.removePage(idx);}catch{}});f.deletedPages.clear();}
-      if(typeof laFlushToAnnos==='function')laFlushToAnnos(fileIdx);
+      if(typeof laFlushToAnnos==='function')await laFlushToAnnos(fileIdx);
       await bakeAnnotations(doc,fileIdx);await bakeTextEdits(doc,fileIdx);await bakeTextEditsNew(doc,fileIdx);
       if(typeof laUnflush==='function')laUnflush();
       const activeBms=f._existingBms.filter(b=>!b.disabled);
@@ -5086,6 +5126,8 @@ function psSerializeFile(f, idx){
     buf: f.buf,                       // ArrayBuffer — IndexedDB stores it natively
     pageRotations: f.pageRotations||{},
     deletedPages: Array.from(f.deletedPages||[]),
+
+    pageOrder: f.pageOrder||null,
     groupId: f.groupId!=null?f.groupId:null,
     annos: annosClean,
     la: laClean,
@@ -5191,7 +5233,7 @@ async function psRestoreFiles(recs){
         name: r.name, buf: buf.slice(0), pdfJsDoc:null, pdfLibDoc:null, rotation:0,
         bulkSel:true, bulkStatus:'pending', bulkAction:'keep', bulkNewBm:null, _existingBms:[],
         groupId: r.groupId!=null?r.groupId:null, pendingRotation:0,
-        deletedPages: new Set(r.deletedPages||[]), pageRotations: r.pageRotations||{},
+        deletedPages: new Set(r.deletedPages||[]), pageRotations: r.pageRotations||{}, pageOrder: r.pageOrder||null,
         _viewRotation:0, _hasBm:false, _hasOcr:false, _hasRotation: Object.keys(r.pageRotations||{}).length>0
       };
       const idx = S.files.length;
@@ -5369,27 +5411,40 @@ async function laRefreshViewport(){
   if(LA._canvasVp){ try{ LA._vp=LA._canvasVp.clone({scale:S.zoom});
     if(LA.DEBUG) console.log('[LA vp] via clone — rotation:',LA._vp.rotation,'scale:',LA._vp.scale,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height),'| S.rotation:',S.rotation,'zoom:',S.zoom);
     return; }catch(e){ if(LA.DEBUG)console.warn('[LA vp] clone failed',e); } }
-  const page=await f.pdfJsDoc.getPage(S.page);
+  const _k=(typeof laKey==='function')?laKey():{fi:S.activeIdx,pg:S.page};
+  const sf=S.files[_k.fi]||f;
+  if(typeof pmDocFor==='function' && !sf.pdfJsDoc){ try{ await pmDocFor(_k.fi); }catch(e){} }
+  const page=await sf.pdfJsDoc.getPage(_k.pg);
   const intrinsic=((page.rotate||0)%360+360)%360;
-  const pageRot=(f.pageRotations&&f.pageRotations[S.page])||0;
+  const pageRot=(sf.pageRotations&&sf.pageRotations[_k.pg])||0;
   LA._vp=page.getViewport({scale:S.zoom, rotation:(S.rotation+intrinsic+pageRot)%360});
   if(LA.DEBUG) console.log('[LA vp] via getViewport — rotation:',(S.rotation+pageRot)%360,'scale:',S.zoom,'pageRot:',pageRot,'size:',Math.round(LA._vp.width)+'x'+Math.round(LA._vp.height));
 }
-function laScreenToPdf(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToPdfPoint(x,y); return [p[0],p[1]]; }
-function laPdfToScreen(x,y){ const v=LA._vp; if(!v) return [x,y]; const p=v.convertToViewportPoint(x,y); return [p[0],p[1]]; }
+function laScreenToPdf(x,y){ const v=LA._bakeVp||LA._vp; if(!v) return [x,y]; const p=v.convertToPdfPoint(x,y); return [p[0],p[1]]; }
+function laPdfToScreen(x,y){ const v=LA._bakeVp||LA._vp; if(!v) return [x,y]; const p=v.convertToViewportPoint(x,y); return [p[0],p[1]]; }
 
 // ---- persistence (serialize fabric objects per page) -----------------------
+// Resolve the storage key for the live-annotation layer. With the page organizer
+// active, annotations belong to the SOURCE file+page of the current display page,
+// so they follow the page through reorder / delete / merge and bake correctly.
+function laKey(){
+  if(typeof pmEntry==='function'){ const e=pmEntry(S.activeIdx,S.page); if(e) return {fi:e.fi, pg:e.src}; }
+  return {fi:S.activeIdx, pg:S.page};
+}
 function laCurrentList(){
-  if(!LA.objectsByPage[S.activeIdx]) LA.objectsByPage[S.activeIdx]={};
-  if(!LA.objectsByPage[S.activeIdx][S.page]) LA.objectsByPage[S.activeIdx][S.page]=[];
-  return LA.objectsByPage[S.activeIdx][S.page];
+  const k=laKey();
+  if(!LA.objectsByPage[k.fi]) LA.objectsByPage[k.fi]={};
+  if(!LA.objectsByPage[k.fi][k.pg]) LA.objectsByPage[k.fi][k.pg]=[];
+  return LA.objectsByPage[k.fi][k.pg];
 }
 const LA_PROPS=['laType','laColor','laStroke','laDash','laOpacity','laFont','laBold','laItalic','laHeadStart','laHeadEnd','laText','path','pathOffset'];
 function laPersist(){
   const c=LA.canvas; if(!c) return;
   const arr=c.getObjects().map(o=>o.toObject(LA_PROPS));
   arr._zoom = S.zoom;   // remember the display scale these pixel coords belong to
-  LA.objectsByPage[S.activeIdx][S.page]=arr;
+  const k=laKey();
+  if(!LA.objectsByPage[k.fi]) LA.objectsByPage[k.fi]={};
+  LA.objectsByPage[k.fi][k.pg]=arr;
   if(typeof psScheduleSave==='function') psScheduleSave();
 }
 
@@ -5431,7 +5486,8 @@ async function laRestoreSnapshot(snapStr){
     }
     // persist restored state to the page store (at current zoom)
     const arr=list; arr._zoom=S.zoom;
-    LA.objectsByPage[S.activeIdx][S.page]=arr.map(o=>Object.assign({},o));
+    const _k=laKey(); if(!LA.objectsByPage[_k.fi]) LA.objectsByPage[_k.fi]={};
+    LA.objectsByPage[_k.fi][_k.pg]=arr.map(o=>Object.assign({},o));
     laApplyToolMode(); c.requestRenderAll(); laHideBar();
   }catch(e){ if(LA.DEBUG)console.error('[LA undo] restore',e); }
   LA._histSuspend=false;
@@ -5875,20 +5931,34 @@ window.addEventListener('keydown',(e)=>{
 // Uses LA._vp (current viewport). For correctness the active page must be the
 // one being baked; bulk handled by switching is out of scope — single-file path
 // is the primary one and matches the on-screen viewport exactly.
-function laFlushToAnnos(fileIdx){
+async function laFlushToAnnos(fileIdx){
   LA._flushed=[];
   // Ensure latest edits are serialized
   if(LA.canvas && fileIdx===S.activeIdx) laPersist();
   const byPage=LA.objectsByPage[fileIdx]; if(!byPage) return;
   if(!S.annos[fileIdx]) S.annos[fileIdx]={};
-  Object.keys(byPage).forEach(pgStr=>{
-    const pg=parseInt(pgStr); const list=byPage[pg]; if(!list||!list.length) return;
+  const sf=S.files[fileIdx];
+  const _savedVp=LA._vp;
+  for(const pgStr of Object.keys(byPage)){
+    const pg=parseInt(pgStr); const list=byPage[pg]; if(!list||!list.length) continue;
     if(!S.annos[fileIdx][pg]) S.annos[fileIdx][pg]=[];
+    // Build the correct viewport for THIS source page at the zoom its coords use.
+    LA._bakeVp=null;
+    try{
+      if(sf){ if(typeof pmDocFor==='function' && !sf.pdfJsDoc){ await pmDocFor(fileIdx); }
+        const pdfPage=await sf.pdfJsDoc.getPage(pg);
+        const intrinsic=((pdfPage.rotate||0)%360+360)%360;
+        const pr=(sf.pageRotations&&sf.pageRotations[pg])||0;
+        const z=(list._zoom!=null)?list._zoom:S.zoom;
+        LA._bakeVp=pdfPage.getViewport({scale:z, rotation:(intrinsic+pr)%360});
+      }
+    }catch(e){ if(LA.DEBUG)console.warn('[LA flush] vp',e); }
     list.forEach(serialized=>{
       const anno=laSerializedToAnno(serialized, fileIdx, pg);
       if(anno){ S.annos[fileIdx][pg].push(anno); LA._flushed.push({fi:fileIdx,pg,anno}); }
     });
-  });
+  }
+  LA._bakeVp=null; LA._vp=_savedVp;
 }
 function laUnflush(){
   if(!LA._flushed) return;
@@ -5900,7 +5970,7 @@ function laUnflush(){
 // We need a viewport for that page. For the active page we use LA._vp; for other
 // pages we lazily build one synchronously via the cached canvas viewport rotation.
 function laSerializedToAnno(s, fileIdx, pg){
-  const vp=LA._vp; if(!vp) return null;
+  const vp=LA._bakeVp||LA._vp; if(!vp) return null;
   const col=s.laColor||s.stroke||s.fill||'#000000';
   const base={ _pdfSpace:true, _baked:false, color:col, strokeSize:s.laStroke||s.strokeWidth||3,
                dash:s.laDash||'solid', rot:0 };
@@ -5981,5 +6051,315 @@ window.laApplyToolMode=laApplyToolMode;
         <button class="btn bXs" style="background:rgba(234,179,8,.2);color:var(--amb);border:1px solid rgba(234,179,8,.3)" onclick="teShowModified()">📋 Vis ændringer</button>
         <button class="btn bXs bDng" onclick="toggleTextEdit()">✕ Luk</button>
       </div>
+
+<!-- SIDEORGANISERING DRAWER -->
+<div id="pm-drawer" class="hidden">
+  <div id="pm-head">
+    <div><b>📑 Sideorganisering</b><div id="pm-info">—</div></div>
+    <button class="btn bXs bGh" onclick="pmToggle()">✕</button>
+  </div>
+  <div id="pm-tb">
+    <button class="btn bXs bGh" onclick="pmRotateSelected(90)" title="Roter valgte 90° med uret">↻</button>
+    <button class="btn bXs bGh" onclick="pmRotateSelected(-90)" title="Roter valgte 90° mod uret">↺</button>
+    <button class="btn bXs bDng" onclick="pmDeleteSelected()" title="Slet valgte sider">🗑 Slet</button>
+    <button class="btn bXs bCyn" onclick="pmOpenMerge()" title="Flet sider fra en anden åben PDF">⊕ Flet</button>
+  </div>
+  <div id="pm-list"></div>
+  <div id="pm-merge-box">
+    <div style="font-size:11px;color:var(--t2)">Flet sider fra en anden åben PDF ind i denne:</div>
+    <select id="pm-merge-sel"></select>
+    <select id="pm-merge-where">
+      <option value="end">Sæt ind til sidst</option>
+      <option value="start">Sæt ind først</option>
+      <option value="after-current">Efter nuværende side</option>
+    </select>
+    <div style="display:flex;gap:6px">
+      <button class="btn bCyn bSm bFull" onclick="pmDoMerge()">⊕ Flet ind</button>
+      <button class="btn bGh bSm" onclick="pmCloseMerge()">Annuller</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* === Sideorganisering (Page Organizer) — injected ===
+   A robust page model that lets the user reorder, delete, and MERGE pages from
+   other open PDFs WITHOUT leaving the tool. Annotations never desync because on
+   download we first bake each source page's annotations into that source file's
+   buffer, THEN assemble a fresh PDF in the chosen order.
+
+   Data model (lazy, per file):
+     f.pageOrder = [ {fi:<sourceFileIdx>, src:<1-basedSourcePage>}, ... ]
+   Display page N (1-based) === f.pageOrder[N-1]. If pageOrder is absent, the file
+   is "pristine" (its own pages 1..N in order) and all legacy code paths apply.
+============================================================================== */
+const PM = { _open:false, _sel:new Set(), _sort:null };
+
+// Has the user changed the page composition (reorder / delete / merge)?
+function pmIsModified(f){
+  if(!f || !f.pageOrder) return false;
+  // pristine == own pages in natural order
+  const n = f.pdfJsDoc ? f.pdfJsDoc.numPages : f.pageOrder.length;
+  if(f.pageOrder.length !== n) return true;
+  for(let i=0;i<f.pageOrder.length;i++){
+    const e=f.pageOrder[i];
+    if(e.fi!==S.files.indexOf(f) || e.src!==i+1) return true;
+  }
+  return false;
+}
+
+// Ensure f.pageOrder exists (default = own pages in order).
+function pmEnsureOrder(fileIdx){
+  const f=S.files[fileIdx];
+  if(!f) return null;
+  if(!f.pageOrder){
+    const n = f.pdfJsDoc ? f.pdfJsDoc.numPages : 0;
+    f.pageOrder = [];
+    for(let p=1;p<=n;p++) f.pageOrder.push({fi:fileIdx, src:p});
+  }
+  return f.pageOrder;
+}
+
+// Map a display page (1-based) to its source {fi,src}. Falls back to own page.
+function pmEntry(fileIdx, displayPage){
+  const f=S.files[fileIdx]; if(!f) return null;
+  if(f.pageOrder && f.pageOrder[displayPage-1]) return f.pageOrder[displayPage-1];
+  return {fi:fileIdx, src:displayPage};
+}
+
+// How many display pages does this file currently have?
+function pmPageCount(fileIdx){
+  const f=S.files[fileIdx]; if(!f) return 0;
+  if(f.pageOrder) return f.pageOrder.length;
+  return f.pdfJsDoc ? f.pdfJsDoc.numPages : 0;
+}
+
+// Resolve the pdf.js document for a given source file (load if needed).
+async function pmDocFor(fi){
+  const f=S.files[fi]; if(!f) return null;
+  if(!f.pdfJsDoc) f.pdfJsDoc = await pdfjsLib.getDocument({data:f.buf.slice(0)}).promise;
+  return f.pdfJsDoc;
+}
+
+// ---- Panel open/close -------------------------------------------------------
+function pmToggle(){
+  PM._open=!PM._open;
+  const el=document.getElementById('pm-drawer');
+  if(el) el.classList.toggle('hidden',!PM._open);
+  if(PM._open && S.activeIdx>=0) pmRender();
+}
+window.pmToggle=pmToggle;
+
+// ---- Render thumbnails ------------------------------------------------------
+async function pmRender(){
+  if(S.activeIdx<0) return;
+  pmEnsureOrder(S.activeIdx);
+  const f=S.files[S.activeIdx];
+  const list=document.getElementById('pm-list');
+  if(!list) return;
+  list.innerHTML=''; PM._sel.clear();
+  const order=f.pageOrder;
+  for(let i=0;i<order.length;i++){
+    const disp=i+1;
+    const ent=order[i];
+    const card=document.createElement('div');
+    card.className='pm-card'+(disp===S.page?' pm-cur':'');
+    card.dataset.disp=disp;
+    const fromOther = ent.fi!==S.activeIdx;
+    card.innerHTML =
+      '<div class="pm-cb" onclick="pmToggleSel(event,'+disp+')"></div>'+
+      '<canvas class="pm-cv"></canvas>'+
+      '<div class="pm-lbl">'+disp+(fromOther?' <span class="pm-ext" title="Flettet fra '+escH(S.files[ent.fi]?S.files[ent.fi].name:'?')+'">⎘</span>':'')+'</div>';
+    card.addEventListener('click',(e)=>{
+      if(e.target.closest('.pm-cb')) return;
+      S.page=disp; updateNavUI();
+      if(S._fitMode!==false){ zoomFit(); } else { renderPage(); }
+      pmHighlight(disp);
+    });
+    list.appendChild(card);
+    // render thumb async
+    (async (entry,canvas)=>{
+      try{
+        const doc=await pmDocFor(entry.fi);
+        const pg=await doc.getPage(entry.src);
+        const srcF=S.files[entry.fi];
+        const rot=((pg.rotate||0)%360+360)%360;
+        const pr=(srcF.pageRotations&&srcF.pageRotations[entry.src])||0;
+        const vp=pg.getViewport({scale:0.28, rotation:(rot+pr)%360});
+        canvas.width=vp.width; canvas.height=vp.height; canvas.style.width='100%';
+        await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      }catch(e){}
+    })(ent, card.querySelector('.pm-cv'));
+  }
+  // drag to reorder
+  if(PM._sort){ try{PM._sort.destroy();}catch(e){} }
+  if(typeof Sortable!=='undefined'){
+    PM._sort=Sortable.create(list,{animation:130,onEnd:(e)=>pmReorder(e.oldIndex,e.newIndex)});
+  }
+  pmUpdateInfo();
+}
+function pmHighlight(disp){
+  document.querySelectorAll('#pm-list .pm-card').forEach(c=>c.classList.toggle('pm-cur',parseInt(c.dataset.disp)===disp));
+}
+function pmUpdateInfo(){
+  const f=S.files[S.activeIdx];
+  const info=document.getElementById('pm-info');
+  if(info && f) info.textContent = pmPageCount(S.activeIdx)+' sider'+(pmIsModified(f)?' • ændret':'');
+}
+
+// ---- Selection --------------------------------------------------------------
+function pmToggleSel(e,disp){
+  e.stopPropagation();
+  if(PM._sel.has(disp)) PM._sel.delete(disp); else PM._sel.add(disp);
+  document.querySelectorAll('#pm-list .pm-card').forEach(c=>{
+    const d=parseInt(c.dataset.disp);
+    c.querySelector('.pm-cb').classList.toggle('on',PM._sel.has(d));
+    c.classList.toggle('pm-selected',PM._sel.has(d));
+  });
+}
+window.pmToggleSel=pmToggleSel;
+
+// ---- Reorder (drag) ---------------------------------------------------------
+function pmReorder(oldIdx,newIdx){
+  if(oldIdx===newIdx) return;
+  const f=S.files[S.activeIdx]; pmEnsureOrder(S.activeIdx);
+  const moved=f.pageOrder.splice(oldIdx,1)[0];
+  f.pageOrder.splice(newIdx,0,moved);
+  f._hasPageEdits=true;
+  // follow the moved page as the current page
+  S.page=newIdx+1;
+  pmRender(); renderFileList(); updateNavUI();
+  if(S._fitMode!==false){ zoomFit(); } else { renderPage(); }
+  if(typeof psScheduleSave==='function') psScheduleSave();
+  toast('Rækkefølge ændret ✓','ok');
+}
+
+// ---- Delete -----------------------------------------------------------------
+function pmDeleteSelected(){
+  if(!PM._sel.size){ toast('Vælg sider først',true); return; }
+  const f=S.files[S.activeIdx]; pmEnsureOrder(S.activeIdx);
+  if(PM._sel.size>=f.pageOrder.length){ toast('Kan ikke slette alle sider',true); return; }
+  const dels=[...PM._sel].sort((a,b)=>b-a);   // high→low so indices stay valid
+  dels.forEach(disp=> f.pageOrder.splice(disp-1,1));
+  PM._sel.clear(); f._hasPageEdits=true;
+  if(S.page>f.pageOrder.length) S.page=f.pageOrder.length;
+  S.totalPages=f.pageOrder.length;
+  pmRender(); renderFileList(); updateNavUI();
+  if(S._fitMode!==false){ zoomFit(); } else { renderPage(); }
+  if(typeof psScheduleSave==='function') psScheduleSave();
+  toast(dels.length+' side(r) slettet ✓','ok');
+}
+window.pmDeleteSelected=pmDeleteSelected;
+
+// ---- Rotate selected --------------------------------------------------------
+async function pmRotateSelected(dir){
+  if(!PM._sel.size){ toast('Vælg sider først',true); return; }
+  const step=(dir===-90)?-90:90;
+  pmEnsureOrder(S.activeIdx);
+  const f=S.files[S.activeIdx];
+  for(const disp of PM._sel){
+    const ent=f.pageOrder[disp-1]; if(!ent) continue;
+    const srcF=S.files[ent.fi]; if(!srcF.pageRotations) srcF.pageRotations={};
+    const before=((srcF.pageRotations[ent.src]||0)%360+360)%360;
+    if(typeof laRemapPageForRotation==='function' && ent.fi===S.activeIdx){
+      try{ await laRemapPageForRotation(ent.fi,ent.src,step,before); }catch(e){}
+    }
+    srcF.pageRotations[ent.src]=((before+step)%360+360)%360;
+    srcF._hasRotation=true;
+  }
+  pmRender(); renderFileList();
+  if(S._fitMode!==false){ zoomFit(); } else { renderPage(); }
+  if(typeof psScheduleSave==='function') psScheduleSave();
+  toast('Roteret ✓','ok');
+}
+window.pmRotateSelected=pmRotateSelected;
+
+// ---- Merge: append another open file's pages --------------------------------
+function pmOpenMerge(){
+  const sel=document.getElementById('pm-merge-sel');
+  if(!sel) return;
+  sel.innerHTML='';
+  let n=0;
+  S.files.forEach((f,i)=>{
+    if(i===S.activeIdx) return;          // can't merge a file into itself here
+    const o=document.createElement('option');
+    o.value=i; o.textContent=f.name.substring(0,40);
+    sel.appendChild(o); n++;
+  });
+  if(!n){ toast('Åbn mindst én anden PDF for at flette',true); return; }
+  document.getElementById('pm-merge-box').style.display='flex';
+}
+window.pmOpenMerge=pmOpenMerge;
+function pmCloseMerge(){ const b=document.getElementById('pm-merge-box'); if(b) b.style.display='none'; }
+window.pmCloseMerge=pmCloseMerge;
+
+async function pmDoMerge(){
+  const sel=document.getElementById('pm-merge-sel');
+  const where=document.getElementById('pm-merge-where');
+  if(!sel||sel.value==='') return;
+  const srcFi=parseInt(sel.value);
+  pmEnsureOrder(S.activeIdx);
+  const f=S.files[S.activeIdx];
+  const doc=await pmDocFor(srcFi);
+  const count=doc.numPages;
+  const newEntries=[];
+  for(let p=1;p<=count;p++) newEntries.push({fi:srcFi, src:p});
+  if(where && where.value==='start') f.pageOrder.unshift(...newEntries);
+  else if(where && where.value==='after-current') f.pageOrder.splice(S.page, 0, ...newEntries);
+  else f.pageOrder.push(...newEntries);   // end (default)
+  f._hasPageEdits=true;
+  S.totalPages=f.pageOrder.length;
+  pmCloseMerge(); pmRender(); renderFileList(); updateNavUI();
+  if(typeof psScheduleSave==='function') psScheduleSave();
+  toast(count+' side(r) flettet ind ✓','ok');
+}
+window.pmDoMerge=pmDoMerge;
+
+// ---- Assemble an ordered pdf-lib doc for download ---------------------------
+// Bakes each involved source file's annotations into its own buffer FIRST, then
+// copies pages in the chosen order. Returns a pdf-lib PDFDocument.
+async function pmAssembleDoc(fileIdx){
+  const f=S.files[fileIdx];
+  const order=f.pageOrder;
+  // 1) Bake annotations + apply rotations into a per-source working buffer.
+  const involved=new Set(order.map(e=>e.fi));
+  const srcDocs={};         // fi -> loaded pdf-lib doc (with rotations applied)
+  for(const fi of involved){
+    const sf=S.files[fi];
+    // bake OLD-system annotations into sf.buf for every page that has them
+    if(S.annos[fi]){ for(const pg of Object.keys(S.annos[fi])){ await bakePageNow(fi, parseInt(pg)); } }
+    const d=await PDFLib.PDFDocument.load(sf.buf.slice(0),{ignoreEncryption:true});
+    // apply per-page rotations onto the source doc so copied pages carry rotation
+    if(sf.pageRotations){
+      Object.keys(sf.pageRotations).forEach(pg=>{
+        const idx=parseInt(pg)-1;
+        if(idx>=0 && idx<d.getPageCount()){
+          const p=d.getPage(idx);
+          p.setRotation(PDFLib.degrees((p.getRotation().angle + (sf.pageRotations[pg]||0))%360));
+        }
+      });
+    }
+    // bake FABRIC (LA) annotations for THIS source file by its source page.
+    // laFlushToAnnos pushes pdf-space annos into S.annos[fi][pg]; bakeAnnotations
+    // then draws only the not-yet-baked _pdfSpace ones onto the matching page.
+    if(typeof laFlushToAnnos==='function' && fi===S.activeIdx){
+      try{ await laFlushToAnnos(fi); await bakeAnnotations(d, fi); if(typeof laUnflush==='function') laUnflush(); }catch(e){ if(window.LA&&LA.DEBUG)console.warn('[PM] LA bake',e); }
+    }
+    srcDocs[fi]=d;
+  }
+  // 2) Assemble fresh doc in display order.
+  const out=await PDFLib.PDFDocument.create();
+  for(const ent of order){
+    const d=srcDocs[ent.fi];
+    if(!d) continue;
+    const [copied]=await out.copyPages(d,[ent.src-1]);
+    out.addPage(copied);
+  }
+  out.setModificationDate(new Date());
+  return out;
+}
+window.pmAssembleDoc=pmAssembleDoc;
+window.pmIsModified=pmIsModified;
+
+</script>
 </body>
 </html>
