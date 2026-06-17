@@ -455,13 +455,13 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 .la-popup .la-row.on{background:#eef2ff;}
 
 /* ── Sideorganisering (Page Organizer) drawer ── */
-#pm-drawer{position:fixed;top:0;right:0;width:300px;height:100vh;background:var(--sf);border-left:1px solid var(--bd);z-index:400;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.5);transition:transform .2s}
-#pm-drawer.hidden{transform:translateX(310px)}
+#pm-drawer{position:fixed;top:0;right:0;width:440px;max-width:92vw;height:100vh;background:var(--sf);border-left:1px solid var(--bd);z-index:400;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.5);transition:transform .2s}
+#pm-drawer.hidden{transform:translateX(460px)}
 #pm-head{flex-shrink:0;padding:11px 13px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
 #pm-head b{font-size:13px}
 #pm-info{font-size:10px;color:var(--t3);margin-top:2px}
 #pm-tb{flex-shrink:0;display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--bd)}
-#pm-list{flex:1;overflow-y:auto;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+#pm-list{flex:1;overflow-y:auto;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
 .pm-card{position:relative;background:var(--sf3);border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;transition:border-color .12s}
 .pm-card:hover{border-color:var(--bd2)}
 .pm-card.pm-cur{border-color:var(--acc)}
@@ -624,7 +624,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
     <button class="btn bIcon bSm" onclick="toggleSearch()" title="Ctrl+F">🔍</button>
     <button class="btn bIcon bSm" id="btn-compare" onclick="toggleCompare()">⊟⊞</button>
     <div class="vsep"></div>
-    <button class="btn bIcon bSm" onclick="togglePageMgr()">⊞</button>
+    <button class="btn bIcon bSm" onclick="pmToggle()" title="Sideorganisering">⊞</button>
   </div>
   <div class="sp"></div>
   <button class="btn bAmb bSm" id="tb-sug" disabled onclick="showFnSuggest()">📄 Omdøb</button>
@@ -671,8 +671,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
         <div class="mb-item" onclick="openM('m-extract');closeMenus()">⊡ Udtræk sider…</div>
         <div class="mb-item" onclick="openM('m-split');closeMenus()">✂ Split PDF…</div>
         <div class="mb-sep"></div>
-        <div class="mb-item" onclick="pmToggle();closeMenus()">📑 Sideorganisering (flet/flyt/slet)</div>
-        <div class="mb-item" onclick="togglePageMgr();closeMenus()">⊞ Sidepanel</div>
+        <div class="mb-item" onclick="pmToggle();closeMenus()">📑 Sideorganisering — flet, flyt, slet sider</div>
         <div class="mb-item" onclick="toggleCompare();closeMenus()">⊟⊞ Sammenlign</div>
       </div>
     </div>
@@ -2431,7 +2430,7 @@ async function rotateSingle(dir){
 // ================================================================
 // PAGE MANAGER
 // ================================================================
-function togglePageMgr(){S._pageMgrOpen=!S._pageMgrOpen;document.getElementById('page-mgr').classList.toggle('hidden',!S._pageMgrOpen);if(S._pageMgrOpen&&S.activeIdx>=0)renderPageThumbs();}
+function togglePageMgr(){S._pageMgrOpen=!S._pageMgrOpen;document.getElementById('page-mgr').classList.toggle('hidden',!S._pageMgrOpen);if(S._pageMgrOpen&&typeof PM!=='undefined'&&PM._open&&typeof pmToggle==='function')pmToggle();if(S._pageMgrOpen&&S.activeIdx>=0)renderPageThumbs();}
 async function renderPageThumbs(){
   if(S.activeIdx<0)return;const f=S.files[S.activeIdx];
   const list=document.getElementById('pt-list');list.innerHTML='';S._selPages.clear();
@@ -6145,6 +6144,8 @@ function pmToggle(){
   PM._open=!PM._open;
   const el=document.getElementById('pm-drawer');
   if(el) el.classList.toggle('hidden',!PM._open);
+  // Close the legacy page sidepanel so the two don't overlap.
+  if(PM._open && S._pageMgrOpen && typeof togglePageMgr==='function') togglePageMgr();
   if(PM._open && S.activeIdx>=0) pmRender();
 }
 window.pmToggle=pmToggle;
@@ -6184,7 +6185,7 @@ async function pmRender(){
         const srcF=S.files[entry.fi];
         const rot=((pg.rotate||0)%360+360)%360;
         const pr=(srcF.pageRotations&&srcF.pageRotations[entry.src])||0;
-        const vp=pg.getViewport({scale:0.28, rotation:(rot+pr)%360});
+        const vp=pg.getViewport({scale:0.55, rotation:(rot+pr)%360});
         canvas.width=vp.width; canvas.height=vp.height; canvas.style.width='100%';
         await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
       }catch(e){}
