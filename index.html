@@ -467,8 +467,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;heigh
 .pm-card:hover{border-color:var(--bd2)}
 .pm-card.pm-cur{border-color:var(--acc)}
 .pm-card.pm-selected{border-color:var(--pur)}
-.pm-cv{display:block;width:100%;height:auto;aspect-ratio:1/1.414;object-fit:contain;background:#fff}
-.pm-cv.pm-drawn{aspect-ratio:auto}
+.pm-cv{display:block;width:100%;height:auto;background:#fff}
 .pm-lbl{font-size:10px;color:var(--t2);text-align:center;padding:2px 0;background:var(--sf2);display:flex;align-items:center;justify-content:center;gap:3px}
 .pm-ext{color:var(--cyn)}
 .pm-cb{position:absolute;top:4px;left:4px;width:17px;height:17px;border-radius:4px;border:1.5px solid #fff;background:rgba(0,0,0,.45);z-index:3;display:flex;align-items:center;justify-content:center}
@@ -6177,7 +6176,6 @@ async function pmRender(){
         const vp=pg.getViewport({scale:0.7, rotation:(rot+pr)%360});
         canvas.width=vp.width; canvas.height=vp.height;
         await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-        canvas.classList.add('pm-drawn');
       }catch(e){}
     })();
   };
@@ -6198,7 +6196,7 @@ async function pmRender(){
     const fromOther = ent.fi!==S.activeIdx;
     card.innerHTML =
       '<div class="pm-cb" onclick="pmToggleSel(event,'+disp+')"></div>'+
-      '<div class="pm-thumb"><canvas class="pm-cv"></canvas></div>'+
+      '<div class="pm-thumb"><canvas class="pm-cv" width="210" height="297"></canvas></div>'+
       '<div class="pm-lbl">'+disp+(fromOther?' <span class="pm-ext" title="Flettet fra '+escH(S.files[ent.fi]?S.files[ent.fi].name:'?')+'">⎘</span>':'')+'</div>';
     card.addEventListener('click',(e)=>{
       if(e.target.closest('.pm-cb')) return;
